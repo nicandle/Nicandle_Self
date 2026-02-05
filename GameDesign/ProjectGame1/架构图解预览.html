@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>玩法方案1：架构图解预览</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: { useMaxWidth: false, htmlLabels: true }
+        });
+    </script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f8;
+            color: #333;
+            margin: 0;
+            padding: 40px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 40px;
+            border-left: 5px solid #3498db;
+            padding-left: 15px;
+        }
+        .diagram-box {
+            background: #fff;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>玩法方案1：架构图解</h1>
+
+        <h2>1. 核心玩法循环 (Core Loop)</h2>
+        <div class="diagram-box">
+            <div class="mermaid">
+graph TD
+    %% 节点定义
+    Start((开始)) --> Explore[星际拾荒&lt;br/&gt;(一键导航/扫描)]
+    Explore -->|获得| Gene[基因图谱]
+    Explore -->|获得| Bio[生物质]
+    
+    Gene --> Generate[AI 伙伴入住&lt;br/&gt;(基因混合/预览微调)]
+    Bio --> Generate
+    
+    Generate --> Build[家园建设&lt;br/&gt;(策略装修/标签共鸣)]
+    
+    Build -->|提升| Mood[宠物心情]
+    Build -->|吸引| Visitor[NPC 访客]
+    
+    Mood -->|产出| Gift[专属产物/谢礼]
+    Visitor -->|支付| Ticket[门票/小费]
+    
+    Gift -->|出售| Money[星际币]
+    Ticket -->|出售| Money
+    
+    Money -->|购买| Furniture[功能性家具/装饰]
+    Furniture --> Build
+    
+    subgraph SocialLoop [社交循环]
+    Dispatch[星际派遣&lt;br/&gt;(好友串门)] -->|环境共鸣| DoubleGift[双倍礼物]
+    Dispatch -->|基因采集| EnvGene[环境基因图谱]
+    EnvGene --> Generate
+    DoubleGift --> Money
+    end
+    
+    Generate --> Dispatch
+            </div>
+        </div>
+
+        <h2>2. 经济循环 (Economy Loop)</h2>
+        <div class="diagram-box">
+            <div class="mermaid">
+flowchart LR
+    subgraph Source [资源获取 (Source)]
+    P1[宠物谢礼]
+    P2[访客门票]
+    P3[派遣收益]
+    end
+    
+    subgraph Currency [货币转化 (Currency)]
+    Money((星际币))
+    end
+    
+    subgraph Sink [资源消耗 (Sink)]
+    S1[购买家具/装饰]
+    S2[扩建房间]
+    S3[购买玩具]
+    end
+    
+    subgraph Value [价值验证 (Value)]
+    V1[更高的宠物心情]
+    V2[更美的家园展示]
+    V3[解锁特殊动作]
+    end
+    
+    P1 -->|出售| Money
+    P2 -->|出售| Money
+    P3 -->|出售| Money
+    Money -->|消费| S1
+    Money -->|消费| S2
+    Money -->|消费| S3
+    S1 -->|产出| P1
+    S1 -->|吸引| P2
+    S3 -->|提升| V3
+    S1 -->|提升| V1
+    S1 -->|提升| V2
+    S2 -->|提升| V1
+    S2 -->|提升| V2
+            </div>
+        </div>
+
+        <h2>3. 系统架构概览 (System Architecture)</h2>
+        <div class="diagram-box">
+            <div class="mermaid">
+classDiagram
+    class Player {
+        +List~Pet~ pets
+        +Inventory items
+        +Wallet money
+        +Planet home
+    }
+
+    class Pet {
+        +String id
+        +List~Gene~ genes
+        +List~Tag~ personalityTags
+        +float mood
+        +Model3D appearance
+        +produce()
+        +interact()
+    }
+
+    class Furniture {
+        +String id
+        +List~Field~ effectFields
+        +Type type
+        +int beautyScore
+    }
+
+    class PlanetEnvironment {
+        +Type envType
+        +List~Gene~ localGenes
+        +float productionMultiplier
+    }
+
+    class AI_Generator {
+        +generatePet(genes)
+        +generatePlanet()
+        +evaluateMatch(pet, furniture)
+    }
+
+    Player "1" *-- "n" Pet
+    Player "1" *-- "1" PlanetEnvironment
+    Pet "1" o-- "n" Furniture : 标签共鸣
+    AI_Generator ..> Pet : 生成
+    AI_Generator ..> PlanetEnvironment : 生成
+            </div>
+        </div>
+    </div>
+</body>
+</html>
