@@ -120,7 +120,7 @@ window.onerror = function(msg, url, line, col, error) {
 // ==========================================
 
 const State = {
-    resources: { biomass: 200, coins: 500 }, // Increased starting coins
+    resources: { biomass: 200, coins: 2000 }, // Increased starting coins
     pets: [],
     activePetId: null, // For exploration
     inventory: [], // Exploration Backpack (Array of {id, x, y})
@@ -142,6 +142,7 @@ const State = {
     
     // Interaction State (NEW)
     drag: { petId: null, startX: 0, startY: 0, isDragging: false, vx: 0, vy: 0 },
+    hoveredFurnitureId: null, // Track hovered furniture for radius display,
     
     // Exploration State
     carriedBiomass: 0, // Stackable biomass during exploration
@@ -1138,11 +1139,24 @@ const HomeSystem = {
 
         // Mouse Move
         this.canvas.addEventListener('mousemove', (e) => {
-            if (!State.drag.petId) return;
-
             const rect = this.canvas.getBoundingClientRect();
             const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
             const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+
+            // Check Furniture Hover (for Radius)
+            let found = null;
+            // Iterate backwards to find top-most
+            for (let i = State.furniture.length - 1; i >= 0; i--) {
+                const f = State.furniture[i];
+                // Simple hitbox approx
+                if (Math.hypot(f.x - x, f.y - y) < 30) {
+                    found = f;
+                    break;
+                }
+            }
+            State.hoveredFurnitureId = found ? found.uid : null; // Use uid
+
+            if (!State.drag.petId) return;
 
             // Check drag threshold
             if (!State.drag.isDragging && Math.hypot(x - State.drag.startX, y - State.drag.startY) > 5) {
@@ -1206,13 +1220,35 @@ const HomeSystem = {
             
             // Draw Radius
             if (fData.radius) {
+                const isHovered = f.uid === State.hoveredFurnitureId;
+                
                 ctx.beginPath();
                 ctx.arc(f.x, f.y, fData.radius, 0, Math.PI*2);
-                ctx.fillStyle = fData.element === 'fire' ? 'rgba(231, 76, 60, 0.1)' : 
-                               fData.element === 'water' ? 'rgba(52, 152, 219, 0.1)' : 'rgba(255,255,255,0.1)';
+                
+                // Base style
+                let fillStyle = 'rgba(255,255,255,0.05)';
+                let strokeStyle = 'rgba(255,255,255,0.2)';
+                
+                if (fData.element === 'fire') {
+                    fillStyle = 'rgba(231, 76, 60, 0.05)';
+                    strokeStyle = 'rgba(231, 76, 60, 0.2)';
+                } else if (fData.element === 'water') {
+                    fillStyle = 'rgba(52, 152, 219, 0.05)';
+                    strokeStyle = 'rgba(52, 152, 219, 0.2)';
+                }
+
+                // Hover style (Brighter)
+                if (isHovered) {
+                    fillStyle = fillStyle.replace('0.05', '0.2');
+                    strokeStyle = strokeStyle.replace('0.2', '0.8');
+                    ctx.lineWidth = 2;
+                } else {
+                    ctx.lineWidth = 1;
+                }
+
+                ctx.fillStyle = fillStyle;
                 ctx.fill();
-                ctx.strokeStyle = fData.element === 'fire' ? 'rgba(231, 76, 60, 0.3)' : 
-                                 fData.element === 'water' ? 'rgba(52, 152, 219, 0.3)' : 'rgba(255,255,255,0.3)';
+                ctx.strokeStyle = strokeStyle;
                 ctx.stroke();
             }
 
@@ -1317,19 +1353,31 @@ const VisitorSystem = {
     spawn() {
         if (State.visitor) return;
         
-        // Random Request (Resources or Food, NOT Biomass items since they auto-convert)
+        // Generate 1-3 requests
+        const requests = [];
+        const countReqs = Math.floor(Math.random() * 3) + 1; 
+        
+        // Possible items (Resources or Food)
         const possibleReqs = Object.values(DB.items).filter(i => 
             (i.type === ItemTypes.RESOURCE && i.id !== 'res_poop') || 
             i.type === ItemTypes.FOOD
         );
-        const reqItem = possibleReqs[Math.floor(Math.random() * possibleReqs.length)];
-        const count = Math.floor(Math.random() * 3) + 1;
+
+        for(let i=0; i<countReqs; i++) {
+            const reqItem = possibleReqs[Math.floor(Math.random() * possibleReqs.length)];
+            const count = Math.floor(Math.random() * 3) + 1;
+            requests.push({ 
+                id: reqItem.id, 
+                count: count, 
+                reward: Math.floor(reqItem.value * count * 1.5),
+                done: false 
+            });
+        }
 
         State.visitor = {
             x: 50, y: 350,
             icon: ['👽', '🤖', '👩‍🚀'][Math.floor(Math.random()*3)],
-            req: { id: reqItem.id, count: count },
-            reward: { coins: reqItem.value * count * 1.5 } // 1.5x value reward
+            requests: requests
         };
         UISystem.showFloat("访客到访!", 50, 320, 'orange');
     },
@@ -1337,32 +1385,67 @@ const VisitorSystem = {
     interact() {
         if (!State.visitor) return;
         const v = State.visitor;
-        const has = State.storage.filter(i => i.id === v.req.id).length;
-        const itemInfo = DB.items[v.req.id];
         
-        const content = `
-            <h3>访客委托</h3>
-            <p>我需要 ${v.req.count} 个 ${itemInfo.name}。</p>
-            <p>当前拥有: ${has}/${v.req.count}</p>
-            <p>奖励: ${v.reward.coins} 星际币</p>
-            <button class="btn primary" onclick="VisitorSystem.complete()" ${has < v.req.count ? 'disabled' : ''}>交付</button>
-            <button class="btn danger" onclick="VisitorSystem.leave()">送客</button>
-        `;
+        let content = `<h3>访客委托</h3><div style="max-height:200px; overflow-y:auto;">`;
+        
+        let allDone = true;
+
+        v.requests.forEach((req, idx) => {
+            if (!req.done) allDone = false;
+            const itemInfo = DB.items[req.id];
+            const has = State.storage.filter(i => i.id === req.id).length;
+            
+            content += `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; background:#f9f9f9; padding:5px; border-radius:4px;">
+                    <div style="font-size:12px;">
+                        <div>${itemInfo.icon} <b>${itemInfo.name}</b> x${req.count}</div>
+                        <div style="color:#666;">奖励: 💰${req.reward}</div>
+                    </div>
+                    <div>
+                        ${req.done 
+                            ? '<span style="color:green; font-weight:bold;">✅ 已交付</span>' 
+                            : `<button class="btn sm primary" onclick="VisitorSystem.deliver(${idx})" ${has < req.count ? 'disabled' : ''}>
+                                 交付 (${has}/${req.count})
+                               </button>`
+                        }
+                    </div>
+                </div>
+            `;
+        });
+        
+        content += `</div>`;
+        
+        if (allDone) {
+            content += `<div style="margin-top:10px; color:green; text-align:center;">🎉 所有委托已完成！</div>`;
+            content += `<button class="btn success full-width" onclick="VisitorSystem.leave()">👋 送客 (获得好评)</button>`;
+        } else {
+            content += `<button class="btn danger full-width" onclick="VisitorSystem.leave()" style="margin-top:10px;">🚪 暂时没货，请回吧</button>`;
+        }
+
         UISystem.showModal("访客", content);
     },
 
-    complete() {
-        const v = State.visitor;
+    deliver(idx) {
+        const req = State.visitor.requests[idx];
+        if (req.done) return;
+
+        // Remove items
         let removed = 0;
         for (let i = State.storage.length - 1; i >= 0; i--) {
-            if (State.storage[i].id === v.req.id) {
+            if (State.storage[i].id === req.id) {
                 State.storage.splice(i, 1);
                 removed++;
-                if (removed >= v.req.count) break;
+                if (removed >= req.count) break;
             }
         }
-        State.resources.coins += v.reward.coins;
-        this.leave();
+        
+        // Give Reward
+        State.resources.coins += req.reward;
+        req.done = true;
+        
+        UISystem.showFloat(`+💰${req.reward}`, 300, 300, 'gold'); // Center float
+        UISystem.update();
+        this.interact(); // Refresh Modal
     },
 
     leave() {
@@ -1415,8 +1498,12 @@ const ShopSystem = {
         if (!list) return;
         list.innerHTML = '';
 
-        // Filter sellable items (Resources, Biomass)
-        const sellables = State.storage.map((item, index) => ({...item, index})).filter(i => i.value);
+        // Filter sellable items (Resources, Biomass, but NO Genes)
+        const sellables = State.storage.map((item, index) => ({...item, index})).filter(i => 
+            i.value && 
+            i.type !== ItemTypes.GENE_FRAG && 
+            i.type !== ItemTypes.GENE_MOD
+        );
 
         if (sellables.length === 0) {
             list.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">没有可出售的物品</div>';
@@ -1449,8 +1536,10 @@ const ShopSystem = {
             // If furniture, place it immediately for simplicity in this demo
             if (item.type === ItemTypes.FURNITURE) {
                 State.furniture.push({
+                    uid: Date.now() + Math.random(), // Add UID
                     id: item.id,
                     icon: item.icon,
+                    type: item.type, // Ensure type is passed
                     x: 100 + Math.random() * 400,
                     y: 100 + Math.random() * 200
                 });
@@ -2257,6 +2346,43 @@ const UISystem = {
         document.getElementById('modal-overlay').classList.add('hidden');
     },
 
+    showManual() {
+        const content = `
+            <div style="text-align:left; max-height:400px; overflow-y:auto; padding-right:10px;">
+                <h3 style="border-bottom:2px solid #3498db; padding-bottom:5px;">🚀 核心循环</h3>
+                <p><b>基因培育</b> ➔ <b>宠物养成</b> ➔ <b>家园建设</b> ➔ <b>探险搜刮</b></p>
+
+                <h3 style="border-bottom:2px solid #9b59b6; padding-bottom:5px; margin-top:20px;">1. 🧪 基因实验室</h3>
+                <ul style="padding-left:20px; color:#555;">
+                    <li><b>配方</b>：1个物种基因 (10碎片) + 特征模组。</li>
+                    <li><b>模拟</b>：消耗10生物质，随机生成3个性格方案。</li>
+                    <li><b>实体化</b>：消耗100生物质，创造宠物。</li>
+                </ul>
+
+                <h3 style="border-bottom:2px solid #f1c40f; padding-bottom:5px; margin-top:20px;">2. 🏡 家园与养成</h3>
+                <ul style="padding-left:20px; color:#555;">
+                    <li><b>需求</b>：关注饱食、心情、健康。</li>
+                    <li><b>便便</b>：进食后易拉屎，<b>必须清理</b>否则影响健康。</li>
+                    <li><b>互动</b>：点击可喂食/抚摸，按住可<b>拖拽/扔飞</b>宠物。</li>
+                    <li><b>建造</b>：在商店购买家具，拖拽“上帝之手”调整摆放。家具可提供Buff（如恢复心情）。</li>
+                </ul>
+
+                <h3 style="border-bottom:2px solid #2ecc71; padding-bottom:5px; margin-top:20px;">3. 🗺️ 星际探险</h3>
+                <ul style="padding-left:20px; color:#555;">
+                    <li><b>移动</b>：点击节点移动，消耗 <b>2点饱食度</b>。</li>
+                    <li><b>搜刮</b>：获得基因、物品和生物质（自动堆叠）。</li>
+                    <li><b>背包</b>：将战利品<b>拖拽</b>至右侧网格中整理。</li>
+                    <li><b>结算</b>：返回基地后，物品入库，生物质变现。</li>
+                </ul>
+                
+                <div style="background:#f0f0f0; padding:10px; margin-top:20px; border-radius:5px; font-size:12px;">
+                    <b>🎮 演示推荐：</b> 实验室造宠 -> 家园互动/喂食/清理 -> 商店买家具 -> 探险搜刮资源。
+                </div>
+            </div>
+        `;
+        this.showModal("📖 玩法说明书", content);
+    },
+
     showFloat(text, x, y, color='gold', container = null) {
         const div = document.createElement('div');
         div.innerText = text;
@@ -2328,7 +2454,10 @@ window.onload = () => {
         State.storage.push(Factory.createItem('food_can'));
         
         // 5. Place Shop
-        State.furniture.push(DB.items['bld_shop']);
+        State.furniture.push({
+            uid: 'shop_static',
+            ...DB.items['bld_shop']
+        });
         
         // Initial Notification
         setTimeout(() => {

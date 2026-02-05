@@ -46,8 +46,21 @@
             align-items: center;
         }
         
-        .resource-group { display: flex; gap: 20px; }
+        .resource-group { display: flex; gap: 20px; align-items: center; }
         .resource { font-weight: bold; }
+        
+        #help-btn {
+            background: #9b59b6;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        #help-btn:hover { background: #8e44ad; }
 
         /* Nav */
         #nav-bar {
@@ -471,6 +484,7 @@
             <div class="resource-group">
                 <div class="resource">🧬 生物质: <span id="biomass-display">0</span></div>
                 <div class="resource">💰 星际币: <span id="coins-display">0</span></div>
+                <button id="help-btn" onclick="UISystem.showManual()" title="玩法说明书">?</button>
             </div>
             <div class="pet-status">
                 当前伙伴: <span id="pet-name">无</span> <span id="pet-mood"></span>
