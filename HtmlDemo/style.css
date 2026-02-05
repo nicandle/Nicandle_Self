@@ -1,0 +1,213 @@
+:root {
+    --primary: #4a90e2;
+    --success: #2ecc71;
+    --danger: #e74c3c;
+    --warning: #f1c40f;
+    --dark: #2c3e50;
+    --light: #ecf0f1;
+    --panel-bg: #ffffff;
+    
+    /* Rarity Colors */
+    --rarity-common: #95a5a6;
+    --rarity-uncommon: #2ecc71;
+    --rarity-rare: #3498db;
+    --rarity-epic: #9b59b6;
+    --rarity-legendary: #f1c40f;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #dce4e8;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    user-select: none;
+}
+
+#game-container {
+    width: 960px;
+    background-color: var(--panel-bg);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 600px;
+}
+
+#main-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+#status-bar {
+    background-color: var(--dark);
+    color: white;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.resource-group { display: flex; gap: 20px; }
+.resource { font-weight: bold; font-size: 1.1em; }
+
+/* Nav */
+#nav-bar {
+    background: #34495e;
+    display: flex;
+    padding: 0 10px;
+}
+
+.nav-btn {
+    background: none;
+    border: none;
+    color: #bdc3c7;
+    padding: 15px 25px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-bottom: 3px solid transparent;
+}
+
+.nav-btn:hover { color: white; background: rgba(255,255,255,0.05); }
+.nav-btn.active { color: white; border-bottom-color: var(--primary); font-weight: bold; }
+
+/* Views */
+.view { padding: 20px; height: 100%; display: none; box-sizing: border-box; }
+.view.active { display: block; }
+.hidden { display: none !important; }
+
+/* Buttons */
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: transform 0.1s, filter 0.2s;
+    background: #e0e0e0; color: #333;
+}
+.btn:active { transform: scale(0.98); }
+.btn:hover { filter: brightness(1.1); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.active { background: #333; color: white; box-shadow: inset 0 2px 5px rgba(0,0,0,0.2); }
+
+.btn.primary { background: var(--primary); color: white; }
+.btn.success { background: var(--success); color: white; }
+.btn.danger { background: var(--danger); color: white; }
+.btn.action { background: var(--warning); color: #333; }
+.btn.sm { padding: 5px 10px; font-size: 0.9em; }
+.full-width { width: 100%; }
+
+/* Exploration View */
+#exploration-view { display: flex; gap: 20px; height: 500px; }
+.map-container { position: relative; flex: 2; border: 2px solid #bdc3c7; border-radius: 8px; overflow: hidden; background: #2c3e50; }
+.side-panel { flex: 1; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; padding: 15px; border-radius: 8px; }
+
+#map-overlay { position: absolute; bottom: 20px; left: 20px; right: 20px; pointer-events: none; }
+#node-info { 
+    background: rgba(255,255,255,0.95); 
+    padding: 15px; 
+    border-radius: 8px; 
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+    pointer-events: auto; 
+    text-align: center;
+}
+
+.grid-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; grid-auto-rows: 60px; }
+.slot { background: #dfe6e9; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 24px; position: relative; border: 2px solid transparent; }
+.slot.filled { background: white; border-color: var(--primary); }
+.slot .size-tag { position: absolute; bottom: 1px; right: 1px; font-size: 9px; background: rgba(0,0,0,0.6); color: white; padding: 1px 3px; border-radius: 2px; }
+
+#log-box { flex: 1; overflow-y: auto; font-size: 0.85em; color: #666; border-top: 1px solid #eee; padding-top: 5px; }
+.log-entry { margin-bottom: 4px; }
+
+/* Lab View */
+.lab-layout { display: flex; gap: 30px; height: 100%; }
+.gene-pool { flex: 1; background: #f0f2f5; padding: 15px; border-radius: 8px; overflow-y: auto; }
+.gene-item { 
+    background: white; padding: 10px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; border: 2px solid #ddd; 
+    transition: all 0.2s;
+}
+.gene-item:hover { border-color: var(--primary); transform: translateX(5px); }
+.gene-item.selected { border-color: var(--success); background: #e8f8f5; }
+
+.simulation-chamber { flex: 2; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.selected-genes { display: flex; gap: 10px; margin-bottom: 10px; }
+.gene-slot { 
+    width: 80px; height: 80px; background: #eee; border: 2px dashed #ccc; border-radius: 8px; 
+    display: flex; align-items: center; justify-content: center; font-size: 0.8em; color: #999;
+}
+.gene-slot.filled { border-style: solid; border-color: var(--primary); background: white; color: #333; font-size: 1.5em; }
+
+.polaroid-frame { 
+    background: white; 
+    padding: 15px 15px 50px 15px; 
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15); 
+    transform: rotate(-2deg); 
+    transition: transform 0.3s;
+}
+.polaroid-frame:hover { transform: rotate(0deg) scale(1.02); }
+.preview-placeholder { 
+    width: 250px; height: 250px; 
+    background: #333; 
+    display: flex; align-items: center; justify-content: center; 
+    color: #666; 
+    overflow: hidden;
+    flex-direction: column;
+}
+.polaroid-label { 
+    font-family: 'Comic Sans MS', cursive, sans-serif; 
+    text-align: center; 
+    margin-top: 15px; 
+    color: #333; 
+    font-size: 1.2em; 
+}
+.lab-controls { display: flex; gap: 15px; }
+
+/* Base View */
+.base-layout { display: flex; gap: 20px; height: 500px; }
+.room-container { flex: 2; display: flex; flex-direction: column; gap: 10px; }
+.room-header { display: flex; justify-content: space-between; align-items: center; }
+#base-canvas { background: #fdf6e3; border: 2px solid #d2b48c; border-radius: 8px; cursor: crosshair; }
+#base-canvas:active { cursor: grabbing; }
+
+.storage-container { flex: 1; background: #f8f9fa; padding: 15px; border-radius: 8px; overflow-y: auto; }
+.item-card { background: white; padding: 8px; margin-bottom: 8px; border-radius: 4px; display: flex; align-items: center; gap: 10px; font-size: 0.9em; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 4px solid transparent; }
+
+/* Rarity Borders */
+.rarity-common { border-left-color: var(--rarity-common) !important; }
+.rarity-uncommon { border-left-color: var(--rarity-uncommon) !important; }
+.rarity-rare { border-left-color: var(--rarity-rare) !important; }
+.rarity-epic { border-left-color: var(--rarity-epic) !important; }
+.rarity-legendary { border-left-color: var(--rarity-legendary) !important; }
+
+/* Shop */
+.shop-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    text-align: left;
+}
+.shop-item {
+    border: 2px solid #eee;
+    padding: 10px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: #fdfdfd;
+}
+.shop-item:hover {
+    border-color: var(--warning);
+}
+
+/* Modal */
+#modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: white; padding: 30px; border-radius: 12px; text-align: center; min-width: 300px; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
