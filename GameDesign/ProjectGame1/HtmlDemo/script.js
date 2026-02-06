@@ -84,10 +84,12 @@ window.onerror = function(msg, url, line, col, error) {
             res_herb: { id: 'res_herb', name: '草药', type: ItemTypes.RESOURCE, value: 15, icon: '🌿', w: 2, h: 1 },
             res_pearl: { id: 'res_pearl', name: '珍珠', type: ItemTypes.RESOURCE, value: 40, icon: '⚪', w: 1, h: 1 },
             res_feather: { id: 'res_feather', name: '风羽', type: ItemTypes.RESOURCE, value: 25, icon: '🪶', w: 1, h: 2 },
+            res_wool: { id: 'res_wool', name: '软羊毛', type: ItemTypes.RESOURCE, value: 30, icon: '🧶', w: 1, h: 1, desc: '从宠物身上薅下来的' },
             res_poop: { id: 'res_poop', name: '便便', type: ItemTypes.RESOURCE, value: 1, icon: '💩', w: 1, h: 1, desc: '如果不清理会影响心情' },
             
             // --- Buildings & Service Furniture ---
             bld_shop: { id: 'bld_shop', name: '星际商店', type: 'building', icon: '🏪', desc: '买卖物资的地方', size: 0, x: 500, y: 50 },
+            bld_travel: { id: 'bld_travel', name: '旅行向导', type: 'building', icon: '🛸', desc: '前往好友家园', size: 0, x: 50, y: 50 },
             
             fur_feeder: { id: 'fur_feeder', name: '自动喂食器', type: ItemTypes.FURNITURE, price: 300, icon: '🥣', element: 'neutral', desc: '自动解决饥饿问题', w: 2, h: 1, radius: 60 },
             fur_toy_box: { id: 'fur_toy_box', name: '玩具箱', type: ItemTypes.FURNITURE, price: 400, icon: '🧸', element: 'neutral', desc: '快速恢复心情', w: 2, h: 1, radius: 60 },
@@ -120,7 +122,7 @@ window.onerror = function(msg, url, line, col, error) {
 // ==========================================
 
 const State = {
-    resources: { biomass: 200, coins: 2000 }, // Increased starting coins
+    resources: { biomass: 500, coins: 2000 }, // Increased starting coins
     pets: [],
     activePetId: null, // For exploration
     inventory: [], // Exploration Backpack (Array of {id, x, y})
@@ -146,6 +148,14 @@ const State = {
     
     // Exploration State
     carriedBiomass: 0, // Stackable biomass during exploration
+
+    // Friend Home State
+    friendHome: {
+        pets: [],
+        furniture: [],
+        droppedItems: [],
+        ownerName: "土豪金"
+    }
 };
 
 // ==========================================
@@ -205,6 +215,7 @@ const Factory = {
             actionState: 'idle', 
             actionTimer: 0,
             fightCooldown: 0, // New: Cooldown for fighting
+            woolGrowth: 0, // 0-100, for shearing
             tags: analysis.tags,
             drops: analysis.drops, // Store potential drops
             x: 300, y: 200,
@@ -356,18 +367,59 @@ const MapSystem = {
     // Called when switching to Exploration Scene
     show() {
         console.log("MapSystem V3: Show");
-        // 1. Validate Pet
-        if (!State.activePetId) {
-            if (State.pets.length > 0) State.activePetId = State.pets[0].id;
-            else {
-                alert("请先在实验室创造一只宠物！");
-                UISystem.switchScene('lab');
-                return;
-            }
+        
+        if (State.pets.length === 0) {
+            alert("请先在实验室创造一只宠物！");
+            UISystem.switchScene('lab');
+            return;
         }
 
-        // 2. Setup Canvas
-        // Wait for DOM to update display:flex
+        // Show Pet Selection Modal
+        const content = `
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px;">
+                ${State.pets.map(p => `
+                    <div onclick="MapSystem.selectPet('${p.id}')" style="
+                        border:2px solid ${p.id === State.activePetId ? '#f1c40f' : '#ddd'}; 
+                        padding:10px; border-radius:8px; cursor:pointer; text-align:center;
+                        background:${p.health < 50 || p.hunger < 20 ? '#fff5f5' : 'white'};
+                        transition: all 0.2s;
+                    " onmouseover="this.style.borderColor='#3498db'" onmouseout="this.style.borderColor='${p.id === State.activePetId ? '#f1c40f' : '#ddd'}'">
+                        <div style="font-size:40px;">${p.icon}</div>
+                        <div style="font-weight:bold; margin:5px 0;">${p.name}</div>
+                        <div style="font-size:12px; line-height:1.5;">
+                            <div>❤️ ${Math.floor(p.health)}/100</div>
+                            <div>🍖 ${Math.floor(p.hunger)}/100</div>
+                            <div>😊 ${Math.floor(p.mood)}/100</div>
+                        </div>
+                        ${p.health < 20 || p.hunger < 10 ? '<div style="color:red; font-size:10px; margin-top:5px;">⚠️ 状态不佳</div>' : ''}
+                    </div>
+                `).join('')}
+            </div>
+            <div style="margin-top:10px; font-size:12px; color:#666; text-align:center;">
+                点击选择一只宠物作为队长。状态过低无法出战。
+            </div>
+        `;
+        
+        UISystem.showModal("🚩 选择探险队长", content);
+    },
+
+    selectPet(petId) {
+        const pet = State.pets.find(p => p.id === petId);
+        if (!pet) return;
+
+        if (pet.health < 20) {
+            alert("这只宠物太虚弱了(HP<20)，无法探险！请先去治疗。");
+            return;
+        }
+        if (pet.hunger < 10) {
+            alert("这只宠物太饿了(饱食<10)，无法探险！请先喂食。");
+            return;
+        }
+
+        State.activePetId = petId;
+        UISystem.closeModal();
+        
+        // Proceed with Map Init
         setTimeout(() => {
             this.resize();
             this.startNewExploration();
@@ -716,7 +768,11 @@ const MapSystem = {
 const PetSystem = {
     update() {
         const now = Date.now();
-        State.pets.forEach(pet => {
+        // Update pets based on current scene
+        const pets = State.scene === 'friend_home' ? State.friendHome.pets : State.pets;
+        const droppedItems = State.scene === 'friend_home' ? State.friendHome.droppedItems : State.droppedItems;
+
+        pets.forEach(pet => {
             // 0. Dragging Physics Override
             if (State.drag.petId === pet.id && State.drag.isDragging) {
                 pet.vx = 0; pet.vy = 0;
@@ -732,8 +788,13 @@ const PetSystem = {
                  pet.poopMeter += 0.2; // Passive poop buildup
                  if (pet.fightCooldown > 0) pet.fightCooldown--;
                  
+                 // Wool Growth
+                 if (pet.woolGrowth < 100) {
+                     pet.woolGrowth += 0.05; // Grows slowly
+                 }
+
                  // Poop Check
-                 const nearbyPoop = State.droppedItems.find(d => d.item.id === 'res_poop' && Math.hypot(d.x - pet.x, d.y - pet.y) < 60);
+                 const nearbyPoop = droppedItems.find(d => d.item.id === 'res_poop' && Math.hypot(d.x - pet.x, d.y - pet.y) < 60);
                  if (nearbyPoop) {
                      pet.mood = Math.max(0, pet.mood - 0.05); 
                      pet.health = Math.max(0, pet.health - 0.02); // Poop hurts health
@@ -743,14 +804,14 @@ const PetSystem = {
                  // Poop Drop Check
                  if (pet.poopMeter > 100) {
                      pet.poopMeter = 0;
-                     PetSystem.dropPoop(pet);
+                     PetSystem.dropPoop(pet, droppedItems);
                  }
             }
 
             // --- Fighting Logic ---
             if (pet.actionState === 'idle' && pet.fightCooldown <= 0) {
                 // Find nearby pets
-                const enemy = State.pets.find(p => p.id !== pet.id && Math.hypot(p.x - pet.x, p.y - pet.y) < 50);
+                const enemy = pets.find(p => p.id !== pet.id && Math.hypot(p.x - pet.x, p.y - pet.y) < 50);
                 if (enemy) {
                     // Calculate Aggression
                     let aggression = 0.001; // Base chance
@@ -799,11 +860,12 @@ const PetSystem = {
 
             // Determine Emoji & Target
             let targetFurniture = null;
+            const furnitureList = State.scene === 'friend_home' ? State.friendHome.furniture : State.furniture;
             
             if (pet.health < 50) {
                 pet.currentEmoji = '😷'; // Sick
                 // Go to bed to heal
-                targetFurniture = State.furniture.find(f => f.id === 'fur_bed');
+                targetFurniture = furnitureList.find(f => f.id === 'fur_bed');
                 if (targetFurniture && Math.hypot(pet.x - targetFurniture.x, pet.y - targetFurniture.y) < 30) {
                     pet.actionState = 'sleeping';
                     pet.actionTimer = 200; 
@@ -813,7 +875,7 @@ const PetSystem = {
                 }
             } else if (pet.hunger < 30) {
                 pet.currentEmoji = '🍖'; // Hungry
-                targetFurniture = State.furniture.find(f => f.id === 'fur_feeder');
+                targetFurniture = furnitureList.find(f => f.id === 'fur_feeder');
                 if (targetFurniture && Math.hypot(pet.x - targetFurniture.x, pet.y - targetFurniture.y) < 30) {
                     // Arrived at feeder
                     pet.actionState = 'eating';
@@ -823,7 +885,7 @@ const PetSystem = {
                 }
             } else if (pet.mood < 40) {
                 pet.currentEmoji = '🌧️'; // Sad
-                targetFurniture = State.furniture.find(f => f.id === 'fur_toy_box');
+                targetFurniture = furnitureList.find(f => f.id === 'fur_toy_box');
                 if (targetFurniture && Math.hypot(pet.x - targetFurniture.x, pet.y - targetFurniture.y) < 30) {
                     // Arrived at toy box
                     pet.actionState = 'playing';
@@ -844,7 +906,7 @@ const PetSystem = {
 
                 // Occasional Shower (Hygiene simulation)
                 if (Math.random() < 0.002) {
-                    targetFurniture = State.furniture.find(f => f.id === 'fur_shower');
+                    targetFurniture = furnitureList.find(f => f.id === 'fur_shower');
                     if (targetFurniture) {
                         pet.currentEmoji = '💩'; // Feel dirty
                     }
@@ -890,6 +952,53 @@ const PetSystem = {
             } else {
                 // AI Movement Mode
                 
+                // --- Collision & Squeezing Logic (Enhanced) ---
+                let collisionForceX = 0;
+                let collisionForceY = 0;
+                let squeezeIntensity = 0; // Accumulates squeeze force
+
+                pets.forEach(other => {
+                    if (other.id === pet.id) return;
+                    const dist = Math.hypot(pet.x - other.x, pet.y - other.y);
+                    const minDist = 40; // Assumed radius sum (20 + 20)
+                    
+                    if (dist < minDist && dist > 0) {
+                        // Calculate repulsion
+                        const push = (minDist - dist) / minDist; // 0 to 1 strength
+                        const angle = Math.atan2(pet.y - other.y, pet.x - other.x);
+                        
+                        collisionForceX += Math.cos(angle) * push * 2;
+                        collisionForceY += Math.sin(angle) * push * 2;
+                        
+                        squeezeIntensity += push; // Add up squeeze
+                    }
+                });
+
+                // Smoothly update squeeze factor (Spring effect)
+                if (!pet.squeezeFactor) pet.squeezeFactor = 0;
+                pet.squeezeFactor = pet.squeezeFactor * 0.8 + squeezeIntensity * 0.2;
+
+                // Apply Squeeze Visual (Dynamic Scale & Wobble)
+                if (pet.squeezeFactor > 0.01) {
+                    // Oscillate scale based on time and intensity
+                    const wobble = Math.sin(Date.now() / 50) * pet.squeezeFactor * 0.2;
+                    pet.scaleX = 1 + pet.squeezeFactor * 0.5 - wobble; // Get wider
+                    pet.scaleY = 1 - pet.squeezeFactor * 0.3 + wobble; // Get flatter
+                    
+                    // Add rotation wobble
+                    pet.rotation = Math.sin(Date.now() / 80) * pet.squeezeFactor * 0.5;
+
+                    // Change expression if squeezed hard
+                    if (pet.squeezeFactor > 0.3 && !pet.actionState.startsWith('fight')) {
+                        pet.currentEmoji = '😣';
+                    }
+                } else {
+                    pet.scaleX = 1;
+                    pet.scaleY = 1;
+                    pet.rotation = 0;
+                    if (pet.currentEmoji === '😣') pet.currentEmoji = ''; // Reset expression
+                }
+
                 // Override target if we have a need
                 if (targetFurniture) {
                     pet.targetX = targetFurniture.x;
@@ -908,14 +1017,20 @@ const PetSystem = {
 
                 const dx = pet.targetX - pet.x;
                 const dy = pet.targetY - pet.y;
+                
+                // Apply Movement + Collision Force
                 if (Math.hypot(dx, dy) > 5) {
-                    pet.x += dx * moveSpeed;
-                    pet.y += dy * moveSpeed;
+                    pet.x += dx * moveSpeed + collisionForceX;
+                    pet.y += dy * moveSpeed + collisionForceY;
                 } else {
+                    // Just collision push if idle
+                    pet.x += collisionForceX;
+                    pet.y += collisionForceY;
+
                     // Random wander (Only if no urgent need)
                     if (!targetFurniture && Math.random() < wanderChance) {
                         // Tendency to move towards compatible furniture
-                        const compatibleFurniture = State.furniture.find(f => {
+                        const compatibleFurniture = furnitureList.find(f => {
                             const fData = DB.items[f.id];
                             return fData.element === pet.element || fData.element === 'neutral';
                         });
@@ -929,11 +1044,15 @@ const PetSystem = {
                         }
                     }
                 }
+                
+                // Bounds Check for AI movement
+                pet.x = Math.max(20, Math.min(580, pet.x));
+                pet.y = Math.max(20, Math.min(350, pet.y));
             }
 
             // 2. Furniture Buffs (Resonance)
             let buffed = false;
-            State.furniture.forEach(f => {
+            furnitureList.forEach(f => {
                 if (f.type === 'building') return; // Skip buildings
                 const fData = DB.items[f.id];
                 if (!fData.radius) return;
@@ -955,7 +1074,7 @@ const PetSystem = {
                 pet.lastDropTime = now;
                 // Chance based on mood
                 if (Math.random() < (pet.mood / 200)) { 
-                    this.dropItem(pet);
+                    this.dropItem(pet, droppedItems);
                 }
             }
         });
@@ -970,7 +1089,7 @@ const PetSystem = {
          // Or better, update Factory.createPet in the next tool call.
     },
 
-    dropItem(pet) {
+    dropItem(pet, droppedItems = State.droppedItems) {
         // Enhanced Drop Logic: Favor specific drops
         let itemId = 'res_biomass_s';
         
@@ -993,7 +1112,7 @@ const PetSystem = {
         // Value modifier based on mood
         item.value = Math.floor(item.value * (0.5 + pet.mood/100));
         
-        State.droppedItems.push({
+        droppedItems.push({
             item: item,
             x: pet.x,
             y: pet.y,
@@ -1004,9 +1123,9 @@ const PetSystem = {
         pet.logs.unshift(`${new Date().toLocaleTimeString()} 掉落了 ${item.name}`);
     },
 
-    dropPoop(pet) {
+    dropPoop(pet, droppedItems = State.droppedItems) {
         const item = Factory.createItem('res_poop');
-        State.droppedItems.push({
+        droppedItems.push({
             item: item,
             x: pet.x,
             y: pet.y,
@@ -1043,13 +1162,46 @@ const PetSystem = {
             <div style="margin-top:10px; display:flex; gap:10px;">
                 <button class="btn primary" onclick="PetSystem.feed('${pet.id}')">喂食 (消耗罐头)</button>
                 <button class="btn success" onclick="PetSystem.play('${pet.id}')">抚摸 (+心情)</button>
+                ${pet.woolGrowth >= 100 ? `<button class="btn" style="background:#f1c40f; color:white;" onclick="PetSystem.shear('${pet.id}')">✂️ 薅羊毛</button>` : `<button class="btn" disabled style="background:#ccc;">毛没长齐 (${Math.floor(pet.woolGrowth)}%)</button>`}
+                ${State.scene === 'friend_home' ? `<button class="btn" style="background:#e74c3c; color:white;" onclick="PetSystem.steal('${pet.id}')">😈 诱拐 (10%)</button>` : ''}
             </div>
         `;
         UISystem.showModal("伙伴详情", content);
     },
 
+    shear(petId) {
+        const pet = State.pets.find(p => p.id === petId) || State.friendHome.pets.find(p => p.id === petId);
+        if (!pet || pet.woolGrowth < 100) return;
+
+        pet.woolGrowth = 0;
+        pet.mood = Math.max(0, pet.mood - 10); // Shearing might annoy them slightly
+        
+        // Create Wool Item
+        const item = Factory.createItem('res_wool');
+        
+        const droppedItems = State.scene === 'friend_home' ? State.friendHome.droppedItems : State.droppedItems;
+        
+        droppedItems.push({
+            item: item,
+            x: pet.x,
+            y: pet.y,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5
+        });
+        
+        UISystem.showFloat(`✂️`, pet.x, pet.y);
+        pet.logs.unshift(`${new Date().toLocaleTimeString()} 被薅了羊毛，有点不爽`);
+        pet.currentEmoji = '💢'; // Annoyed expression
+        
+        UISystem.closeModal();
+        UISystem.update();
+    },
+
     feed(petId) {
-        const pet = State.pets.find(p => p.id === petId);
+        // Find pet in either own pets or friend pets
+        let pet = State.pets.find(p => p.id === petId);
+        if (!pet) pet = State.friendHome.pets.find(p => p.id === petId);
+        
         const foodIdx = State.storage.findIndex(i => i.id === 'food_can');
         if (foodIdx === -1) { alert("仓库里没有高级罐头！"); return; }
         
@@ -1063,9 +1215,35 @@ const PetSystem = {
     },
 
     play(petId) {
-        const pet = State.pets.find(p => p.id === petId);
+        let pet = State.pets.find(p => p.id === petId);
+        if (!pet) pet = State.friendHome.pets.find(p => p.id === petId);
+
         pet.mood = Math.min(100, pet.mood + 10);
         pet.logs.unshift(`${new Date().toLocaleTimeString()} 被主人摸了摸头`);
+        UISystem.closeModal();
+        UISystem.update();
+    },
+
+    steal(petId) {
+        const petIdx = State.friendHome.pets.findIndex(p => p.id === petId);
+        if (petIdx === -1) return;
+        const pet = State.friendHome.pets[petIdx];
+
+        // 10% Chance
+        if (Math.random() < 0.1) {
+            // Success
+            State.friendHome.pets.splice(petIdx, 1);
+            pet.id = 'pet_' + Date.now(); // Re-ID to avoid conflicts
+            pet.x = 300; pet.y = 200;
+            State.pets.push(pet);
+            alert(`诱拐成功！${pet.name} 跟你回家了！`);
+            pet.logs.unshift(`${new Date().toLocaleTimeString()} 被诱拐到了新家`);
+        } else {
+            // Fail
+            alert("诱拐失败！它咬了你一口！");
+            pet.currentEmoji = '💢';
+            pet.mood -= 20;
+        }
         UISystem.closeModal();
         UISystem.update();
     }
@@ -1074,6 +1252,24 @@ const PetSystem = {
 const HomeSystem = {
     canvas: null,
     ctx: null,
+    
+    // Helper to get current context
+    getContext() {
+        if (State.scene === 'friend_home') {
+            return {
+                pets: State.friendHome.pets,
+                furniture: State.friendHome.furniture,
+                drops: State.friendHome.droppedItems,
+                isFriend: true
+            };
+        }
+        return {
+            pets: State.pets,
+            furniture: State.furniture,
+            drops: State.droppedItems,
+            isFriend: false
+        };
+    },
 
     init() {
         const c = document.getElementById('base-canvas');
@@ -1087,8 +1283,10 @@ const HomeSystem = {
             const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
             const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
             
+            const ctx = this.getContext();
+
             // 1. Check Pets for Drag
-            for (let p of State.pets) {
+            for (let p of ctx.pets) {
                 if (Math.hypot(p.x - x, p.y - y) < 30) {
                     State.drag.petId = p.id;
                     State.drag.startX = x;
@@ -1102,8 +1300,8 @@ const HomeSystem = {
             }
 
             // 2. Check Drops (Only if not clicking pet)
-            for (let i = State.droppedItems.length - 1; i >= 0; i--) {
-                const d = State.droppedItems[i];
+            for (let i = ctx.drops.length - 1; i >= 0; i--) {
+                const d = ctx.drops[i];
                 if (Math.hypot(d.x - x, d.y - y) < 20) {
                     // Auto-convert Biomass
                     if (d.item.type === ItemTypes.BIOMASS) {
@@ -1115,21 +1313,39 @@ const HomeSystem = {
                         UISystem.showFloat(`+${d.item.name}`, x, y, 'green');
                     }
                     
-                    State.droppedItems.splice(i, 1);
+                    ctx.drops.splice(i, 1);
                     UISystem.update();
                     return;
                 }
             }
             
-            // 3. Check Buildings (Shop)
-            const shop = State.furniture.find(f => f.id === 'bld_shop');
-            if (shop && Math.hypot(shop.x - x, shop.y - y) < 40) {
-                ShopSystem.open();
-                return;
+            // 3. Check Buildings (Shop & Travel) - Only in Base
+            if (!ctx.isFriend) {
+                const shop = ctx.furniture.find(f => f.id === 'bld_shop');
+                if (shop && Math.hypot(shop.x - x, shop.y - y) < 40) {
+                    ShopSystem.open();
+                    return;
+                }
+                
+                const travel = ctx.furniture.find(f => f.id === 'bld_travel');
+                if (travel && Math.hypot(travel.x - x, travel.y - y) < 40) {
+                    // Travel Logic
+                    if (confirm("消耗 100 星际币前往好友【土豪金】的家园？")) {
+                        if (State.resources.coins >= 100) {
+                            State.resources.coins -= 100;
+                            State.scene = 'friend_home';
+                            UISystem.update();
+                            alert("已抵达好友家园！\n你可以：\n1. 捡地上的垃圾\n2. 薅宠物的羊毛\n3. 尝试诱拐宠物");
+                        } else {
+                            alert("星际币不足！");
+                        }
+                    }
+                    return;
+                }
             }
 
-            // 4. Check Visitor
-            if (State.visitor) {
+            // 4. Check Visitor (Only in Base)
+            if (!ctx.isFriend && State.visitor) {
                 if (Math.hypot(State.visitor.x - x, State.visitor.y - y) < 30) {
                     VisitorSystem.interact();
                     return;
@@ -1276,10 +1492,23 @@ const HomeSystem = {
 
         // Pets
         State.pets.forEach(p => {
-            ctx.font = '40px Arial';
-            ctx.fillText(p.icon, p.x, p.y);
+            ctx.save(); // Save context state
+            ctx.translate(p.x, p.y);
             
-            // Mood bar
+            // Apply Squeeze Scale & Rotation
+            if (p.scaleX && p.scaleY) {
+                ctx.scale(p.scaleX, p.scaleY);
+            }
+            if (p.rotation) {
+                ctx.rotate(p.rotation);
+            }
+
+            ctx.font = '40px Arial';
+            ctx.fillText(p.icon, 0, 0); // Draw at 0,0 relative to translate
+            
+            ctx.restore(); // Restore context state
+
+            // Mood bar (Absolute position relative to pet, ignoring scale for readability)
             ctx.fillStyle = 'red';
             ctx.fillRect(p.x - 20, p.y - 40, 40, 4);
             ctx.fillStyle = '#2ecc71';
@@ -1353,62 +1582,116 @@ const VisitorSystem = {
     spawn() {
         if (State.visitor) return;
         
-        // Generate 1-3 requests
-        const requests = [];
-        const countReqs = Math.floor(Math.random() * 3) + 1; 
-        
-        // Possible items (Resources or Food)
-        const possibleReqs = Object.values(DB.items).filter(i => 
-            (i.type === ItemTypes.RESOURCE && i.id !== 'res_poop') || 
-            i.type === ItemTypes.FOOD
-        );
+        // Find Shop Location
+        const shop = State.furniture.find(f => f.id === 'bld_shop');
+        const spawnX = shop ? shop.x - 60 : 440;
+        const spawnY = shop ? shop.y + 30 : 80;
 
-        for(let i=0; i<countReqs; i++) {
-            const reqItem = possibleReqs[Math.floor(Math.random() * possibleReqs.length)];
-            const count = Math.floor(Math.random() * 3) + 1;
-            requests.push({ 
-                id: reqItem.id, 
-                count: count, 
-                reward: Math.floor(reqItem.value * count * 1.5),
-                done: false 
-            });
-        }
-
+        // Generate Requests
         State.visitor = {
-            x: 50, y: 350,
+            x: spawnX,
+            y: spawnY,
             icon: ['👽', '🤖', '👩‍🚀'][Math.floor(Math.random()*3)],
-            requests: requests
+            name: '星际访客',
+            requests: this.generateRequests()
         };
-        UISystem.showFloat("访客到访!", 50, 320, 'orange');
+        
+        UISystem.showFloat("访客到访!", spawnX, spawnY, 'orange');
+    },
+
+    generateRequests() {
+        const requests = [];
+        const count = 2 + Math.floor(Math.random() * 2); // 2-3 requests
+        
+        for(let i=0; i<count; i++) {
+            const r = Math.random();
+            if (r < 0.5) {
+                // Resource Request
+                const target = Object.values(DB.items).filter(it => it.type === ItemTypes.RESOURCE || it.type === ItemTypes.FOOD);
+                const item = target[Math.floor(Math.random() * target.length)];
+                const amount = 1 + Math.floor(Math.random() * 5);
+                requests.push({
+                    type: 'item',
+                    id: item.id,
+                    name: item.name,
+                    count: amount,
+                    reward: item.value * amount * 2, // Double market price
+                    done: false
+                });
+            } else if (r < 0.8) {
+                // Borrow Pet Request (Simplified to "Show Pet")
+                requests.push({
+                    type: 'show_pet',
+                    id: 'pet_show',
+                    name: '展示高分宠物',
+                    count: 1,
+                    reward: 500,
+                    done: false,
+                    desc: "让我看看评分>200的宠物"
+                });
+            } else {
+                // Dynamic Pet Request (Element/Trait)
+                const elements = ['fire', 'water', 'grass', 'electric', 'wind'];
+                const targetElement = elements[Math.floor(Math.random() * elements.length)];
+                const elementNames = { fire: '火', water: '水', grass: '草', electric: '雷', wind: '风' };
+                
+                const scenarios = [
+                    { desc: `我家炉子坏了，借只【${elementNames[targetElement]}】宠物生火`, req: 'element', val: targetElement },
+                    { desc: `需要一只【${elementNames[targetElement]}】宠物帮忙干活`, req: 'element', val: targetElement },
+                    { desc: `想看看【${elementNames[targetElement]}】属性的宠物`, req: 'element', val: targetElement }
+                ];
+                const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+
+                requests.push({
+                    type: 'trait_pet',
+                    id: 'pet_trait_' + Date.now(),
+                    name: '借用宠物',
+                    count: 1,
+                    reward: 800,
+                    done: false,
+                    desc: scenario.desc,
+                    reqType: scenario.req,
+                    reqVal: scenario.val
+                });
+            }
+        }
+        return requests;
     },
 
     interact() {
         if (!State.visitor) return;
-        const v = State.visitor;
         
-        let content = `<h3>访客委托</h3><div style="max-height:200px; overflow-y:auto;">`;
+        let content = `<div style="display:flex; flex-direction:column; gap:10px;">`;
+        content += `<p>👽 <b>星际访客</b>: "你好！我正在寻找这些东西..."</p>`;
         
         let allDone = true;
-
-        v.requests.forEach((req, idx) => {
+        
+        State.visitor.requests.forEach((req, idx) => {
             if (!req.done) allDone = false;
-            const itemInfo = DB.items[req.id];
-            const has = State.storage.filter(i => i.id === req.id).length;
             
+            // Check if player has enough
+            let hasEnough = false;
+            if (req.type === 'item') {
+                const count = State.storage.filter(i => i.id === req.id).length;
+                hasEnough = count >= req.count;
+            } else if (req.type === 'show_pet') {
+                hasEnough = State.pets.some(p => p.score > 200);
+            } else if (req.type === 'trait_pet') {
+                if (req.reqType === 'element') {
+                    hasEnough = State.pets.some(p => p.element === req.reqVal);
+                }
+            }
+
             content += `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; background:#f9f9f9; padding:5px; border-radius:4px;">
-                    <div style="font-size:12px;">
-                        <div>${itemInfo.icon} <b>${itemInfo.name}</b> x${req.count}</div>
-                        <div style="color:#666;">奖励: 💰${req.reward}</div>
-                    </div>
+                <div style="background:#f9f9f9; padding:10px; border-radius:4px; display:flex; justify-content:space-between; align-items:center; opacity:${req.done?0.5:1}">
                     <div>
-                        ${req.done 
-                            ? '<span style="color:green; font-weight:bold;">✅ 已交付</span>' 
-                            : `<button class="btn sm primary" onclick="VisitorSystem.deliver(${idx})" ${has < req.count ? 'disabled' : ''}>
-                                 交付 (${has}/${req.count})
-                               </button>`
-                        }
+                        <div>${req.type === 'item' ? `📦 <b>${req.name}</b> x${req.count}` : `🦁 <b>${req.desc}</b>`}</div>
+                        <div style="font-size:12px; color:gold;">💰 报酬: ${req.reward}</div>
                     </div>
+                    ${req.done ? 
+                        `<span style="color:green;">✅ 已完成</span>` : 
+                        `<button class="btn sm ${hasEnough?'primary':'disabled'}" onclick="${hasEnough ? `VisitorSystem.deliver(${idx})` : ''}">${hasEnough ? '交付' : '不足'}</button>`
+                    }
                 </div>
             `;
         });
@@ -1417,9 +1700,9 @@ const VisitorSystem = {
         
         if (allDone) {
             content += `<div style="margin-top:10px; color:green; text-align:center;">🎉 所有委托已完成！</div>`;
-            content += `<button class="btn success full-width" onclick="VisitorSystem.leave()">👋 送客 (获得好评)</button>`;
+            content += `<button class="btn success full-width" onclick="VisitorSystem.refresh()">🔄 刷新委托 (访客休息一下)</button>`;
         } else {
-            content += `<button class="btn danger full-width" onclick="VisitorSystem.leave()" style="margin-top:10px;">🚪 暂时没货，请回吧</button>`;
+            content += `<button class="btn danger full-width" onclick="VisitorSystem.refresh()" style="margin-top:10px;">🚪 没货了，换一批 (刷新)</button>`;
         }
 
         UISystem.showModal("访客", content);
@@ -1824,7 +2107,7 @@ const LabSystem = {
 };
 
 const UISystem = {
-    currentStorageTab: 'all', // Default to All
+    currentStorageTab: 'item', // Default to Item (Resource)
 
     init() {
         // Bind Nav
@@ -1843,14 +2126,53 @@ const UISystem = {
         const shopBtn = document.getElementById('shop-btn');
         if(shopBtn) shopBtn.onclick = () => ShopSystem.open();
 
+        // Bind Pet List (NEW)
+        const petListBtn = document.getElementById('pet-list-btn');
+        if(petListBtn) petListBtn.onclick = () => this.showPetList();
+
         this.update();
+    },
+
+    showPetList() {
+        if (State.pets.length === 0) {
+            alert("你还没有任何伙伴！快去基因实验室创造一个吧。");
+            return;
+        }
+
+        const content = `
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; max-height:400px; overflow-y:auto;">
+                ${State.pets.map(p => `
+                    <div style="
+                        border:1px solid #ddd; 
+                        padding:10px; border-radius:8px; text-align:center;
+                        background:${p.health < 50 ? '#fff5f5' : 'white'};
+                        position:relative;
+                    ">
+                        <div style="font-size:40px; cursor:pointer;" onclick="PetSystem.interact('${p.id}')">${p.icon}</div>
+                        <div style="font-weight:bold; margin:5px 0;">${p.name}</div>
+                        <div style="font-size:12px; line-height:1.5; color:#666;">
+                            <div>❤️ ${Math.floor(p.health)} | 🍖 ${Math.floor(p.hunger)}</div>
+                            <div>😊 ${Math.floor(p.mood)} | 💩 ${Math.floor(p.poopMeter)}%</div>
+                            <div>🏆 评分: ${p.score}</div>
+                            <div style="color:#3498db; margin-top:2px;">🏷️ ${p.tags.join(', ')}</div>
+                        </div>
+                        <div style="margin-top:5px; display:flex; gap:5px; justify-content:center;">
+                            <button class="btn sm primary" onclick="PetSystem.feed('${p.id}')">喂</button>
+                            <button class="btn sm success" onclick="PetSystem.play('${p.id}')">摸</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        
+        this.showModal("🐶 伙伴列表", content);
     },
 
     setStorageTab(tab) {
         this.currentStorageTab = tab;
         
         // Update Buttons
-        const map = { 'all': 0, 'gene': 1, 'item': 2, 'living': 3 }; 
+        const map = { 'item': 0, 'gene': 1, 'living': 2 }; 
         const buttons = document.querySelectorAll('.storage-tabs .tab-btn');
         buttons.forEach((b, i) => {
             if (i === map[tab]) b.classList.add('active');
@@ -2349,6 +2671,20 @@ const UISystem = {
     showManual() {
         const content = `
             <div style="text-align:left; max-height:400px; overflow-y:auto; padding-right:10px;">
+                <div style="background:#fff3cd; border-left:4px solid #ffc107; padding:10px; margin-bottom:15px; font-size:13px;">
+                    <strong>⚠️ 核心痛点与优化方向</strong>
+                    <ul style="margin:5px 0; padding-left:20px;">
+                        <li><strong>问题</strong>：当前版本宠物功能性弱、交互匮乏；探险循环割裂，等待体验不佳。</li>
+                        <li><strong>目标</strong>：后续开发将聚焦<strong>轻量化、休闲娱乐化</strong>，重点强化宠物在核心循环中的价值与交互反馈。</li>
+                        <li><strong>理念转变</strong>：
+                            <ul>
+                                <li><strong>家园是宠物的放大器</strong>（非宠物是家园的放大器）。</li>
+                                <li><strong>为宠物建设家园</strong>（非宠物在家园当奴隶）。</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+
                 <h3 style="border-bottom:2px solid #3498db; padding-bottom:5px;">🚀 核心循环</h3>
                 <p><b>基因培育</b> ➔ <b>宠物养成</b> ➔ <b>家园建设</b> ➔ <b>探险搜刮</b></p>
 
@@ -2375,6 +2711,12 @@ const UISystem = {
                     <li><b>结算</b>：返回基地后，物品入库，生物质变现。</li>
                 </ul>
                 
+                <h3 style="border-bottom:2px solid #e74c3c; padding-bottom:5px; margin-top:20px;">4. 💰 经济与建设</h3>
+                <ul style="padding-left:20px; color:#555;">
+                    <li><b>访客系统</b>：随机有外星访客造访，提交他们需求的物资可获得大量 <b>星际币</b>。</li>
+                    <li><b>星际商店</b>：购买家具（提供Buff）、食物、玩具；出售多余资源。</li>
+                </ul>
+
                 <div style="background:#f0f0f0; padding:10px; margin-top:20px; border-radius:5px; font-size:12px;">
                     <b>🎮 演示推荐：</b> 实验室造宠 -> 家园互动/喂食/清理 -> 商店买家具 -> 探险搜刮资源。
                 </div>
@@ -2422,7 +2764,7 @@ const UISystem = {
 // ==========================================
 
 function gameLoop() {
-    if (State.scene === 'base') {
+    if (State.scene === 'base' || State.scene === 'friend_home') {
         PetSystem.update();
         HomeSystem.draw();
     }
@@ -2459,6 +2801,28 @@ window.onload = () => {
             ...DB.items['bld_shop']
         });
         
+        // 6. Place Travel Agent
+        State.furniture.push({
+            uid: 'travel_static',
+            ...DB.items['bld_travel']
+        });
+
+        // Init Friend Home Data (Preset)
+        State.friendHome.pets = [
+            Factory.createPet('frag_fire_lizard', ['mod_wings', 'mod_horns'], { tags: ['好斗', '土豪'], drops: ['res_crystal', 'res_coal'], score: 500 }),
+            Factory.createPet('frag_crystal_deer', ['mod_glow', 'mod_big'], { tags: ['高冷', '土豪'], drops: ['res_crystal', 'res_pearl'], score: 600 }),
+            Factory.createPet('frag_thunder_tiger', ['mod_metal', 'mod_claw'], { tags: ['霸道', '土豪'], drops: ['res_crystal', 'res_biomass_l'], score: 800 })
+        ];
+        // Ensure friend pets have wool grown
+        State.friendHome.pets.forEach(p => p.woolGrowth = 100);
+
+        State.friendHome.furniture = [
+            { id: 'fur_bonfire', x: 300, y: 200, type: 'furniture', icon: '🔥' },
+            { id: 'fur_pool', x: 100, y: 100, type: 'furniture', icon: '🏊' },
+            { id: 'fur_heater', x: 400, y: 300, type: 'furniture', icon: '🔥' },
+            { id: 'bld_gym', x: 500, y: 100, type: 'building', icon: '🏋️' } // Rich people stuff
+        ];
+
         // Initial Notification
         setTimeout(() => {
             alert("欢迎来到星际驿站！\n已为您发放少量基因片段。\n请前往【星际探险】收集更多资源！");

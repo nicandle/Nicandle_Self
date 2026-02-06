@@ -488,6 +488,7 @@
             </div>
             <div class="pet-status">
                 当前伙伴: <span id="pet-name">无</span> <span id="pet-mood"></span>
+                <button id="pet-list-btn" class="btn sm" style="margin-left:10px; background:#e67e22; color:white; border:none; border-radius:4px; cursor:pointer;">🐶 伙伴列表</button>
             </div>
         </header>
 
@@ -583,9 +584,8 @@
                     <div class="storage-container">
                         <h3>📦 仓库</h3>
                         <div class="storage-tabs">
-                            <button class="tab-btn active" onclick="UISystem.setStorageTab('all')">全部</button>
+                            <button class="tab-btn active" onclick="UISystem.setStorageTab('item')">资源</button>
                             <button class="tab-btn" onclick="UISystem.setStorageTab('gene')">基因</button>
-                            <button class="tab-btn" onclick="UISystem.setStorageTab('item')">资源</button>
                             <button class="tab-btn" onclick="UISystem.setStorageTab('living')">其他</button>
                         </div>
                         <div id="storage-list"></div>
