@@ -1567,19 +1567,63 @@ const HomeSystem = {
     }
 };
 
+// ==========================================
+// Config System (AI & Settings)
+// ==========================================
+const ConfigSystem = {
+    load() {
+        const data = localStorage.getItem('stellar_station_config');
+        return data ? JSON.parse(data) : { difyUrl: '', difyKey: '', difyPrompt: '' };
+    },
+
+    save() {
+        const url = document.getElementById('dify-url').value.trim();
+        const key = document.getElementById('dify-key').value.trim();
+        const prompt = document.getElementById('dify-prompt').value.trim();
+
+        if (url && !url.startsWith('http')) {
+            alert('URL 必须以 http 或 https 开头');
+            return;
+        }
+
+        const config = { difyUrl: url, difyKey: key, difyPrompt: prompt };
+        localStorage.setItem('stellar_station_config', JSON.stringify(config));
+        
+        document.getElementById('config-modal').style.display = 'none';
+        
+        // Test connection if key is provided
+        if (key) {
+            alert('设置已保存！下次访客刷新时将尝试使用 AI 生成。');
+        }
+    },
+
+    open() {
+        const config = this.load();
+        document.getElementById('dify-url').value = config.difyUrl || '';
+        document.getElementById('dify-key').value = config.difyKey || '';
+        document.getElementById('dify-prompt').value = config.difyPrompt || '';
+        
+        document.getElementById('config-modal').style.display = 'block';
+    },
+
+    close() {
+        document.getElementById('config-modal').style.display = 'none';
+    }
+};
+
 const VisitorSystem = {
     init() {
         // Spawn first visitor quickly
         setTimeout(() => this.spawn(), 3000);
 
         setInterval(() => {
-            if (!State.visitor && Math.random() < 0.5) { // Increased chance
+            if (!State.visitor && Math.random() < 0.5) { 
                 this.spawn();
             }
         }, 5000);
     },
 
-    spawn() {
+    async spawn() {
         if (State.visitor) return;
         
         // Find Shop Location
@@ -1587,16 +1631,130 @@ const VisitorSystem = {
         const spawnX = shop ? shop.x - 60 : 440;
         const spawnY = shop ? shop.y + 30 : 80;
 
-        // Generate Requests
+        // Default Fallback
+        let requests = [];
+        let visitorName = '星际访客';
+        let visitorDesc = '来自遥远星系的旅行者';
+        let isAi = false;
+
+        // Check AI Config
+        const config = ConfigSystem.load();
+        if (config.difyKey && config.difyUrl) {
+            UISystem.showFloat("📡 正在联络星际访客...", spawnX, spawnY - 20, 'cyan');
+            try {
+                const aiData = await this.callAI(config);
+                if (aiData) {
+                    requests = aiData.requests;
+                    visitorName = aiData.name || visitorName;
+                    visitorDesc = aiData.desc || visitorDesc;
+                    isAi = true;
+                }
+            } catch (e) {
+                console.error("AI Spawn Failed:", e);
+                UISystem.showFloat("⚠️ 联络失败，使用本地备用方案", spawnX, spawnY - 40, 'red');
+                // Fallback to local generation
+                requests = this.generateRequests();
+            }
+        } else {
+            requests = this.generateRequests();
+        }
+
+        // Validate requests structure
+        if (!requests || !Array.isArray(requests) || requests.length === 0) {
+            requests = this.generateRequests();
+        }
+
+        // Initialize Visitor
         State.visitor = {
             x: spawnX,
             y: spawnY,
-            icon: ['👽', '🤖', '👩‍🚀'][Math.floor(Math.random()*3)],
-            name: '星际访客',
-            requests: this.generateRequests()
+            icon: ['👽', '🤖', '👩‍🚀', '🐙', '👾'][Math.floor(Math.random()*5)],
+            name: visitorName,
+            desc: visitorDesc,
+            requests: requests,
+            isAi: isAi
         };
         
-        UISystem.showFloat("访客到访!", spawnX, spawnY, 'orange');
+        UISystem.showFloat(isAi ? "🤖 AI访客抵达!" : "访客到访!", spawnX, spawnY, isAi ? '#00ff00' : 'orange');
+    },
+
+    async callAI(config) {
+        // Prepare Context
+        const inventorySummary = State.storage.map(i => i.name).join(', ');
+        const petSummary = State.pets.map(p => `${p.name}(${p.element}属性, 评分${p.score})`).join(', ');
+        const itemsDB = Object.values(DB.items).filter(i => i.type === 'resource' || i.type === 'food').map(i => `${i.name}(ID:${i.id})`).join(', ');
+
+        const systemPrompt = config.difyPrompt || `
+        你是一个游戏NPC生成器。请生成一个星际访客及其委托任务。
+        
+        **当前玩家状态**:
+        - 拥有物品: ${inventorySummary || '无'}
+        - 拥有宠物: ${petSummary || '无'}
+        - 游戏物品库: ${itemsDB}
+
+        **要求**:
+        1. 返回纯 JSON 格式，不要包含 markdown 代码块标记。
+        2. JSON 结构如下:
+        {
+            "name": "访客名字",
+            "desc": "一句话描述",
+            "requests": [
+                {
+                    "type": "item", 
+                    "id": "物品ID (必须从游戏物品库中选择)", 
+                    "name": "物品名称", 
+                    "count": 数量(1-5), 
+                    "reward": 奖励金币数, 
+                    "done": false
+                },
+                {
+                    "type": "trait_pet",
+                    "id": "unique_id",
+                    "name": "借用宠物",
+                    "count": 1,
+                    "reward": 奖励金币数,
+                    "done": false,
+                    "desc": "任务描述 (例如: 我需要一只火属性宠物生火)",
+                    "reqType": "element",
+                    "reqVal": "fire" (可选值: fire, water, grass, electric, wind)
+                }
+            ]
+        }
+        3. 生成 2-3 个任务。任务类型可以是 'item' (索要物品) 或 'trait_pet' (索要特定属性宠物)。
+        4. 访客性格要有趣，可以是海盗、商人、迷路的游客等。
+        `;
+
+        const body = {
+            inputs: {},
+            query: systemPrompt,
+            response_mode: "blocking",
+            user: "player-local"
+        };
+
+        const response = await fetch(config.difyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${config.difyKey}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const answer = data.answer;
+        
+        // Clean up markdown code blocks if present
+        const jsonStr = answer.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(jsonStr);
+    },
+
+    refresh() {
+        State.visitor = null;
+        this.spawn(); // Re-spawn (will trigger AI again if configured)
     },
 
     generateRequests() {
@@ -1662,7 +1820,8 @@ const VisitorSystem = {
         if (!State.visitor) return;
         
         let content = `<div style="display:flex; flex-direction:column; gap:10px;">`;
-        content += `<p>👽 <b>星际访客</b>: "你好！我正在寻找这些东西..."</p>`;
+        const greeting = State.visitor.desc || "你好！我正在寻找这些东西...";
+        content += `<p>${State.visitor.icon} <b>${State.visitor.name}</b>: "${greeting}"</p>`;
         
         let allDone = true;
         
