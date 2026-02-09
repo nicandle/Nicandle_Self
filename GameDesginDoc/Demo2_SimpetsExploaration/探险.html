@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimPets 物理派对玩法方案评估</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #c0392b;
+            --bg-color: #f5f7fa;
+            --card-bg: #ffffff;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: #333;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            width: 250px;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            padding-top: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+
+        .sidebar h2 {
+            text-align: center;
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 20px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.7);
+            padding: 15px 25px;
+            text-align: left;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+            border-left: 4px solid transparent;
+        }
+
+        .tab-btn:hover {
+            background-color: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .tab-btn.active {
+            background-color: rgba(255,255,255,0.2);
+            color: white;
+            border-left-color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        .recommend-badge {
+            background-color: var(--warning-color);
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease-in-out;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Typography & Components */
+        h1 { color: var(--primary-color); border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        h3 { color: var(--accent-color); margin-top: 25px; }
+        p { line-height: 1.6; color: #555; }
+        
+        .concept-box {
+            background: #e8f4f8;
+            border-left: 5px solid var(--accent-color);
+            padding: 15px;
+            margin: 20px 0;
+            font-style: italic;
+        }
+
+        .mechanic-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        .evaluation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .eval-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #eee;
+            text-align: center;
+        }
+
+        .eval-score {
+            font-size: 1.5rem;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .score-high { color: var(--success-color); }
+        .score-med { color: var(--warning-color); }
+        .score-low { color: var(--danger-color); }
+
+        .tag {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+        .tag-physics { background: #e3f2fd; color: #1565c0; }
+        .tag-reward { background: #e8f5e9; color: #2e7d32; }
+        .tag-cost { background: #fff3e0; color: #ef6c00; }
+
+        /* Meta Loop Diagram Style */
+        .loop-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .loop-step {
+            text-align: center;
+            flex: 1;
+            position: relative;
+        }
+        .loop-step::after {
+            content: "➜";
+            position: absolute;
+            right: -10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #ccc;
+            font-size: 1.2rem;
+        }
+        .loop-step:last-child::after { content: ""; }
+        .loop-icon { font-size: 2rem; display: block; margin-bottom: 10px; }
+
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>SimPets 玩法库</h2>
+        <button class="tab-btn active" onclick="openTab(event, 'home')">🏠 项目总览</button>
+        <button class="tab-btn" onclick="openTab(event, 'scheme1')">📦 方案1: 软体快递</button>
+        <button class="tab-btn" onclick="openTab(event, 'scheme2')">🥷 方案2: 笨贼妙手</button>
+        <button class="tab-btn" onclick="openTab(event, 'scheme3')">🚛 方案3: 极限装车 <span class="recommend-badge">推荐</span></button>
+        <button class="tab-btn" onclick="openTab(event, 'scheme4')">🌪️ 方案4: 灾难求生</button>
+        <button class="tab-btn" onclick="openTab(event, 'scheme5')">🧹 方案5: 软体清洁工</button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        
+        <!-- Home Tab -->
+        <div id="home" class="tab-content active">
+            <h1>SimPets 物理派对：设计总纲</h1>
+            <p>本项目旨在为 SimPets (AI宠物) 开发一个<strong>资源产出副本</strong>。核心体验对标《动物派对》的笨拙物理感。</p>
+            
+            <h3>🔄 全局循环 (The Meta Loop)</h3>
+            <div class="loop-container">
+                <div class="loop-step">
+                    <span class="loop-icon">🏠</span>
+                    <strong>家园缺物资</strong><br><small>缺猫粮/家具</small>
+                </div>
+                <div class="loop-step">
+                    <span class="loop-icon">🎮</span>
+                    <strong>进入物理关卡</strong><br><small>3-5分钟挑战</small>
+                </div>
+                <div class="loop-step">
+                    <span class="loop-icon">🎁</span>
+                    <strong>所见即所得</strong><br><small>搬什么得什么</small>
+                </div>
+                <div class="loop-step">
+                    <span class="loop-icon">🐱</span>
+                    <strong>喂养宠物</strong><br><small>资源归库</small>
+                </div>
+            </div>
+
+            <h3>⚖️ 评估标准 (Design Constraints)</h3>
+            <div class="mechanic-card">
+                <p>所有方案均基于以下 <strong>5个核心维度</strong> 进行严格评估：</p>
+                <ol>
+                    <li><strong>笨拙物理 (Clumsy)</strong>：是否有《动物派对》那种“想做却做不好”的滑稽感？</li>
+                    <li><strong>单人 PVE</strong>：是否适合单人游玩，无需联机？</li>
+                    <li><strong>低成本 (Low Cost)</strong>：是否避免了复杂的关卡设计和AI编写？</li>
+                    <li><strong>短平快 (Short)</strong>：单局时长是否控制在 3-5 分钟？</li>
+                    <li><strong>所见即所得 (WYGIWYK)</strong>：关卡内的行为是否直接对应家园奖励？</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Scheme 1 -->
+        <div id="scheme1" class="tab-content">
+            <h1>方案1: 软体快递 (Jelly Express)</h1>
+            <div class="concept-box">
+                "在《动物派对》的物理混沌世界中，扮演一名笨拙的快递员，克服重力与地形，将不可名状的货物送达终点。"
+            </div>
+
+            <div class="mechanic-card">
+                <h3>🎮 核心机制</h3>
+                <ul>
+                    <li><strong>操作</strong>：WASD移动 + 左右键独立控制双手抓取。</li>
+                    <li><strong>挑战</strong>：重心偏移（抱重物易摔）、地形机关（旋转盘、强风口）。</li>
+                    <li><strong>流程</strong>：起点接单 -> 穿越物理赛道 -> 终点交付。</li>
+                </ul>
+                <h3>🎁 奖励逻辑</h3>
+                <p><strong>送达即拥有</strong>。你背着猫爬架冲过终点，回家就获得该猫爬架。</p>
+            </div>
+
+            <h3>📊 深度评估</h3>
+            <div class="evaluation-grid">
+                <div class="eval-item">
+                    <span class="eval-score score-high">High</span>
+                    <strong>物理乐趣</strong>
+                    <p>跑酷与平衡的结合，经典且验证过的好玩。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-med">Medium</span>
+                    <strong>开发成本</strong>
+                    <p>需要制作长条形关卡地形，调教角色在复杂地形的移动。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-med">Medium</span>
+                    <strong>复玩性</strong>
+                    <p>跑图容易腻，依赖随机拼接地图来维持新鲜感。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scheme 2 -->
+        <div id="scheme2" class="tab-content">
+            <h1>方案2: 笨贼妙手 (Clumsy Heist)</h1>
+            <div class="concept-box">
+                "虽然我身手矫健（并不是），但我保证偷走这幅画时不会吵醒保安……哎呀，花瓶碎了。"
+            </div>
+
+            <div class="mechanic-card">
+                <h3>🎮 核心机制</h3>
+                <ul>
+                    <li><strong>操作</strong>：潜行模式（慢走）+ 微操抓取。</li>
+                    <li><strong>挑战</strong>：<strong>噪音系统</strong>。碰撞产生噪音，噪音条满触发机关失败。</li>
+                    <li><strong>流程</strong>：潜入豪宅 -> 避开易碎品 -> 拿到宝物 -> 撤离。</li>
+                </ul>
+                <h3>🎁 奖励逻辑</h3>
+                <p><strong>偷啥得啥</strong>。偷走名画挂墙上，偷走金币买猫粮。</p>
+            </div>
+
+            <h3>📊 深度评估</h3>
+            <div class="evaluation-grid">
+                <div class="eval-item">
+                    <span class="eval-score score-high">High</span>
+                    <strong>物理乐趣</strong>
+                    <p>紧张感与滑稽感并存，像憨豆特工。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-low">High (Risk)</span>
+                    <strong>开发成本</strong>
+                    <p>室内复杂碰撞体设计难，噪音判定逻辑需精细调教。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-high">High</span>
+                    <strong>复玩性</strong>
+                    <p>每次随机生成的障碍阵都能带来新体验。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scheme 3 -->
+        <div id="scheme3" class="tab-content">
+            <h1>方案3: 极限装车 (Wobbly Packer) <span class="recommend-badge">强烈推荐</span></h1>
+            <div class="concept-box">
+                "把一堆形状各异、物理属性奇怪的家具，强行塞进一辆小小的卡车后备箱里，并关上门。"
+            </div>
+
+            <div class="mechanic-card">
+                <h3>🎮 核心机制</h3>
+                <ul>
+                    <li><strong>操作</strong>：<strong>原地操作</strong>。抓取、投掷、身体撞击。</li>
+                    <li><strong>挑战</strong>：<strong>暴力收纳</strong>。利用物理挤压把软体塞进缝隙，最后必须强行关上物理舱门。</li>
+                    <li><strong>流程</strong>：货物掉落 -> 堆叠塞入 -> 关门判定 -> 结算。</li>
+                </ul>
+                <h3>🎁 奖励逻辑</h3>
+                <p><strong>打包带走</strong>。只要能塞进车里并关上门，车里的一切全归你。</p>
+            </div>
+
+            <h3>📊 深度评估</h3>
+            <div class="evaluation-grid">
+                <div class="eval-item">
+                    <span class="eval-score score-med">Medium</span>
+                    <strong>物理乐趣</strong>
+                    <p>强迫症的爽感与关不上门的血压感，非常上头。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-high">Low (Best)</span>
+                    <strong>开发成本</strong>
+                    <p>无需关卡设计！只需一个车厢和一堆现成道具。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-high">High</span>
+                    <strong>复玩性</strong>
+                    <p>类似俄罗斯方块，每次货物组合不同就是新谜题。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scheme 4 -->
+        <div id="scheme4" class="tab-content">
+            <h1>方案4: 灾难求生 (Survival Drill)</h1>
+            <div class="concept-box">
+                "在《动物派对》的潜艇或飞机顶上，只有你一个人，目标是死死抓住栏杆，坚持活过100秒。"
+            </div>
+
+            <div class="mechanic-card">
+                <h3>🎮 核心机制</h3>
+                <ul>
+                    <li><strong>操作</strong>：死按住抓取键 + 左右互搏。</li>
+                    <li><strong>挑战</strong>：<strong>绝命抓地</strong>。对抗倾斜、惯性、结冰地面。</li>
+                    <li><strong>流程</strong>：灾难开始 -> 抓住栏杆 -> 腾手抓物资 -> 存活结算。</li>
+                </ul>
+                <h3>🎁 奖励逻辑</h3>
+                <p><strong>抓到即所得</strong>。一手抓栏杆保命，一手抓飘过的物资包带走。</p>
+            </div>
+
+            <h3>📊 深度评估</h3>
+            <div class="evaluation-grid">
+                <div class="eval-item">
+                    <span class="eval-score score-med">Medium</span>
+                    <strong>物理乐趣</strong>
+                    <p>比较被动，缺乏主动创造的乐趣。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-high">Low</span>
+                    <strong>开发成本</strong>
+                    <p>场景单一，主要做环境物理力场。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-low">Low</span>
+                    <strong>复玩性</strong>
+                    <p>玩法单一，容易变成枯燥的“忍耐测试”。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scheme 5 -->
+        <div id="scheme5" class="tab-content">
+            <h1>方案5: 软体清洁工 (Clumsy Janitor)</h1>
+            <div class="concept-box">
+                "拿着一把长柄拖把，试图清理房间，但笨拙的身体和物理碰撞让你越帮越忙。"
+            </div>
+
+            <div class="mechanic-card">
+                <h3>🎮 核心机制</h3>
+                <ul>
+                    <li><strong>操作</strong>：控制长柄工具（拖把/吸尘器）。</li>
+                    <li><strong>挑战</strong>：<strong>越帮越忙</strong>。转身扫倒花瓶，吸尘器吸住大箱子拖着人跑。</li>
+                    <li><strong>流程</strong>：满地垃圾 -> 物理归位/清扫 -> 回收结算。</li>
+                </ul>
+                <h3>🎁 奖励逻辑</h3>
+                <p><strong>垃圾回收</strong>。扫出的旧玩具放入回收箱，回家变废为宝。</p>
+            </div>
+
+            <h3>📊 深度评估</h3>
+            <div class="evaluation-grid">
+                <div class="eval-item">
+                    <span class="eval-score score-med">Medium</span>
+                    <strong>物理乐趣</strong>
+                    <p>看别人玩好笑，自己玩容易高血压。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-low">High (Risk)</span>
+                    <strong>开发成本</strong>
+                    <p>大量细碎物体的物理碰撞极其消耗性能且难调教。</p>
+                </div>
+                <div class="eval-item">
+                    <span class="eval-score score-med">Medium</span>
+                    <strong>复玩性</strong>
+                    <p>取决于破坏的多样性。</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tab-content");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+                tabcontent[i].classList.remove("active");
+            }
+            tablinks = document.getElementsByClassName("tab-btn");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            // Small timeout to allow display:block to apply before adding active class for animation
+            setTimeout(() => {
+                document.getElementById(tabName).classList.add("active");
+            }, 10);
+            evt.currentTarget.className += " active";
+        }
+    </script>
+</body>
+</html>
