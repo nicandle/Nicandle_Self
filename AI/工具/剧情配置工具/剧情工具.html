@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全功能剧情树编辑器 (导入/导出)</title>
+    <!-- 引入SheetJS库用于Excel操作 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --color-bg: #2d3436;
+            --color-grid: rgba(255, 255, 255, 0.07);
+            --color-node-bg: #636e72;
+            --color-node-border: #b2bec3;
+            --color-text: #dfe6e9;
+            --color-header-bg: #455a64;
+            --color-accent: #0984e3;
+            --color-option-a: #00b894;
+            --color-option-b: #e17055;
+            --color-delete: #d63031;
+            --color-highlight: #fdcb6e;
+        }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; font-family: "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background-color: var(--color-bg); color: var(--color-text);
+        }
+        #canvas {
+            position: relative; width: 100%; height: 100%;
+            background-image: 
+                linear-gradient(var(--color-grid) 1px, transparent 1px),
+                linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+            background-size: 25px 25px;
+        }
+        .node {
+            position: absolute; background-color: var(--color-node-bg);
+            border: 1px solid var(--color-node-border); border-radius: 8px;
+            width: 250px; box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+            cursor: grab; user-select: none; display: flex; flex-direction: column;
+        }
+        .node-header {
+            background-color: var(--color-header-bg); padding: 8px 12px;
+            font-weight: bold; border-top-left-radius: 7px; border-top-right-radius: 7px;
+            border-bottom: 1px solid var(--color-node-border); display: flex; justify-content: space-between;
+        }
+        .node-id { font-size: 12px; color: #bdc3c7; }
+        .node-body { padding: 10px; }
+        .node-field { margin-bottom: 8px; }
+        .node-field strong { color: #bdc3c7; font-size: 12px; display: block; }
+        .node-field span { font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+        .node-options { border-top: 1px dashed #8395a7; margin-top: 10px; padding-top: 10px; }
+        .node-option { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+        .node-option-text { flex-grow: 1; }
+        .connector {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid white; cursor: crosshair;
+            transition: all 0.2s ease;
+        }
+        .connector:hover { 
+            transform: scale(1.4);
+            box-shadow: 0 0 10px var(--color-highlight);
+        }
+        .connector.inlet { background-color: var(--color-accent); position: absolute; top: -9px; left: 50%; transform: translateX(-50%); }
+        .connector.outlet-a { background-color: var(--color-option-a); }
+        .connector.outlet-b { background-color: var(--color-option-b); }
+        .node-footer { display: flex; justify-content: flex-end; padding: 8px; }
+        .node-btn { background: none; border: none; color: var(--color-text); cursor: pointer; padding: 5px; font-size: 16px; }
+        .node-btn:hover { color: white; transform: scale(1.2); }
+        .delete-btn { color: var(--color-delete); }
+        #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .connection-line { stroke-width: 3; fill: none; }
+        .line-a { stroke: var(--color-option-a); }
+        .line-b { stroke: var(--color-option-b); }
+        #edit-modal { position: fixed; background: rgba(45, 52, 54, 0.9); backdrop-filter: blur(5px); border: 1px solid var(--color-node-bg); padding: 20px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 1001; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 450px; }
+        #edit-modal.hidden, #modal-overlay.hidden { display: none; }
+        #modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; }
+        #edit-modal label { display: block; margin-top: 10px; margin-bottom: 5px; font-size: 14px; color: #bdc3c7; }
+        #edit-modal input, #edit-modal textarea { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--color-node-border); background: #dfe6e9; color: var(--color-bg); box-sizing: border-box; }
+        #edit-modal textarea { height: 100px; resize: vertical; }
+        #save-node-btn { background: var(--color-option-a); color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; margin-top: 15px; }
+        
+        /* --- UI Controls & Instructions --- */
+        #controls-bar { position: fixed; top: 10px; left: 10px; z-index: 999; display: flex; flex-wrap: wrap; gap: 10px; }
+        #controls-bar button { background: var(--color-accent); color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; }
+        #controls-bar button:hover { opacity: 0.9; }
+        #controls-bar button.secondary { background-color: var(--color-node-bg); }
+        #instructions-panel { position: fixed; top: 10px; right: 10px; background: rgba(45, 52, 54, 0.9); backdrop-filter: blur(5px); border: 1px solid var(--color-node-bg); padding: 15px; border-radius: 8px; z-index: 999; max-width: 320px; }
+        #instructions-panel h3 { margin: 0 0 10px 0; border-bottom: 1px solid var(--color-node-border); padding-bottom: 5px; }
+        #instructions-panel ul { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; }
+        #instructions-panel.hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="controls-bar">
+        <button id="import-excel-btn">导入 Excel</button>
+        <input type="file" id="file-input" accept=".xlsx, .xls" style="display: none;">
+        <button id="export-excel-btn">导出为 Excel</button>
+        <button id="download-template-btn" class="secondary">下载模板</button>
+        <button id="toggle-instructions-btn" class="secondary">显示/隐藏说明</button>
+    </div>
+
+    <div id="instructions-panel">
+        <h3>使用指南</h3>
+        <ul>
+            <li><b>创建节点：</b>在画布的空白处双击。</li>
+            <li><b>移动节点：</b>按住节点主体拖拽。</li>
+            <li><b>编辑内容：</b>点击节点右下角的 ✏️ 图标。</li>
+            <li><b>连接节点：</b>按住选项旁的彩色圆点(出口)，拖到目标节点的蓝色圆点(入口)后松开。</li>
+            <li><b>导入Excel：</b>
+                <ol>
+                    <li>点击“下载模板”获取标准格式文件。</li>
+                    <li>在Excel中编辑内容。</li>
+                    <li>点击“导入 Excel”并选择你的文件。画布将被自动刷新。</li>
+                </ol>
+            </li>
+            <li><b>导出Excel：</b>点击“导出为 Excel”保存当前画布所有节点数据。</li>
+        </ul>
+    </div>
+
+    <div id="canvas"></div>
+    <svg id="svg-layer"></svg>
+
+    <div id="modal-overlay" class="hidden"></div>
+    <div id="edit-modal" class="hidden">
+        <h3>编辑节点</h3>
+        <input type="hidden" id="editing-node-id">
+        <label for="node-stage-id-input">阶段 ID (Stage ID)</label>
+        <input type="text" id="node-stage-id-input" placeholder="例如：Chapter1, Scene2...">
+        <label for="node-user-id-input">节点 ID (Node ID)</label>
+        <input type="text" id="node-user-id-input" placeholder="为此节点设置一个唯一ID">
+        <label for="node-speaker-input">说话人</label>
+        <input type="text" id="node-speaker-input" placeholder="例如：旁白, 肖途...">
+        <label for="node-text-input">基础文本</label>
+        <textarea id="node-text-input" placeholder="剧情/对话内容..."></textarea>
+        <label for="node-option-a-input">选项 A</label>
+        <input type="text" id="node-option-a-input" placeholder="选项A的文本">
+        <label for="node-option-b-input">选项 B</label>
+        <input type="text" id="node-option-b-input" placeholder="选项B的文本">
+        <button id="save-node-btn">保存</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Element Selection ---
+            const canvas = document.getElementById('canvas');
+            const svgLayer = document.getElementById('svg-layer');
+            const editModal = document.getElementById('edit-modal');
+            const modalOverlay = document.getElementById('modal-overlay');
+            const saveBtn = document.getElementById('save-node-btn');
+            const exportBtn = document.getElementById('export-excel-btn');
+            const importBtn = document.getElementById('import-excel-btn');
+            const fileInput = document.getElementById('file-input');
+            const downloadTemplateBtn = document.getElementById('download-template-btn');
+            const instructionsPanel = document.getElementById('instructions-panel');
+            const toggleInstructionsBtn = document.getElementById('toggle-instructions-btn');
+
+            // --- State Management ---
+            let nodes = [];
+            let connections = [];
+            let activeNode = null;
+            let offsetX, offsetY;
+            let isConnecting = false;
+            let connectionSource = { nodeId: null, outlet: null };
+
+            // --- Core Functions ---
+            function render() {
+                canvas.innerHTML = '';
+                svgLayer.innerHTML = '';
+
+                nodes.forEach(node => {
+                    const nodeEl = document.createElement('div');
+                    nodeEl.className = 'node';
+                    nodeEl.id = `node-${node.id}`;
+                    nodeEl.style.left = `${node.x}px`;
+                    nodeEl.style.top = `${node.y}px`;
+
+                    nodeEl.innerHTML = `
+                        <div class="connector inlet" data-node-id="${node.id}"></div>
+                        <div class="node-header">
+                            <span>${node.speaker || '说话人'}</span>
+                            <span class="node-id">${node.userId || '未命名ID'}</span>
+                        </div>
+                        <div class="node-body">
+                            <div class="node-field">
+                                <strong>基础文本:</strong>
+                                <span>${node.text || '...'}</span>
+                            </div>
+                            <div class="node-options">
+                                <div class="node-option">
+                                    <span class="node-option-text">A: ${node.optionA || '...'}</span>
+                                    <div class="connector outlet-a" data-node-id="${node.id}" data-outlet="A"></div>
+                                </div>
+                                <div class="node-option">
+                                    <span class="node-option-text">B: ${node.optionB || '...'}</span>
+                                    <div class="connector outlet-b" data-node-id="${node.id}" data-outlet="B"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="node-footer">
+                            <button class="node-btn edit-btn" data-id="${node.id}" title="编辑">✏️</button>
+                            <button class="node-btn delete-btn" data-id="${node.id}" title="删除">🗑️</button>
+                        </div>
+                    `;
+                    canvas.appendChild(nodeEl);
+                });
+
+                connections.forEach(conn => {
+                    const fromNode = nodes.find(n => n.id === conn.fromNode);
+                    const toNode = nodes.find(n => n.id === conn.toNode);
+                    if (!fromNode || !toNode) return;
+
+                    const fromEl = document.querySelector(`#node-${fromNode.id} .connector[data-outlet="${conn.fromOutlet}"]`);
+                    const toEl = document.querySelector(`#node-${toNode.id} .inlet`);
+                    
+                    const canvasRect = canvas.getBoundingClientRect();
+                    const fromRect = fromEl.getBoundingClientRect();
+                    const toRect = toEl.getBoundingClientRect();
+
+                    const x1 = fromRect.left - canvasRect.left + fromRect.width / 2;
+                    const y1 = fromRect.top - canvasRect.top + fromRect.height / 2;
+                    const x2 = toRect.left - canvasRect.left + toRect.width / 2;
+                    const y2 = toRect.top - canvasRect.top + toRect.height / 2;
+
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    const d = `M ${x1} ${y1} C ${x1} ${y1 + 100}, ${x2} ${y2 - 100}, ${x2} ${y2}`;
+                    path.setAttribute('d', d);
+                    path.setAttribute('class', `connection-line line-${conn.fromOutlet.toLowerCase()}`);
+                    svgLayer.appendChild(path);
+                });
+            }
+
+            function createNode(x, y) {
+                const newNode = {
+                    id: Date.now(),
+                    userId: `Node_${Date.now().toString().slice(-4)}`,
+                    stageId: 'Default',
+                    speaker: '旁白',
+                    text: '请编辑此节点的文本内容。',
+                    optionA: '选项A',
+                    optionB: '选项B',
+                    x: x, y: y
+                };
+                nodes.push(newNode);
+                render();
+            }
+
+            function deleteNode(nodeId) {
+                if (!confirm('确定要删除这个节点及其所有连接吗？')) return;
+                nodes = nodes.filter(n => n.id !== nodeId);
+                connections = connections.filter(c => c.fromNode !== nodeId && c.toNode !== nodeId);
+                render();
+            }
+
+            function openEditModal(nodeId) {
+                const node = nodes.find(n => n.id === nodeId);
+                if (node) {
+                    document.getElementById('editing-node-id').value = node.id;
+                    document.getElementById('node-stage-id-input').value = node.stageId || '';
+                    document.getElementById('node-user-id-input').value = node.userId || '';
+                    document.getElementById('node-speaker-input').value = node.speaker || '';
+                    document.getElementById('node-text-input').value = node.text || '';
+                    document.getElementById('node-option-a-input').value = node.optionA || '';
+                    document.getElementById('node-option-b-input').value = node.optionB || '';
+                    editModal.classList.remove('hidden');
+                    modalOverlay.classList.remove('hidden');
+                }
+            }
+
+            function closeEditModal() {
+                editModal.classList.add('hidden');
+                modalOverlay.classList.add('hidden');
+            }
+
+            // --- Excel Import/Export ---
+            function exportToExcel() {
+                if (nodes.length === 0) {
+                    alert('没有可导出的节点数据！请先创建一些节点。');
+                    return;
+                }
+                const dataForExport = nodes.map(node => {
+                    const connA = connections.find(c => c.fromNode === node.id && c.fromOutlet === 'A');
+                    const connB = connections.find(c => c.fromNode === node.id && c.fromOutlet === 'B');
+                    
+                    const targetNodeA = connA ? nodes.find(n => n.id === connA.toNode) : null;
+                    const targetNodeB = connB ? nodes.find(n => n.id === connB.toNode) : null;
+
+                    return {
+                        '阶段ID (StageID)': node.stageId,
+                        '节点ID (NodeID)': node.userId,
+                        '说话人 (Speaker)': node.speaker,
+                        '基础文本 (Text)': node.text,
+                        '选项A文本 (OptionA)': node.optionA,
+                        '选项A指向节点ID (TargetA)': targetNodeA ? targetNodeA.userId : '',
+                        '选项B文本 (OptionB)': node.optionB,
+                        '选项B指向节点ID (TargetB)': targetNodeB ? targetNodeB.userId : '',
+                    };
+                });
+
+                const worksheet = XLSX.utils.json_to_sheet(dataForExport);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'StoryData');
+                XLSX.writeFile(workbook, 'StoryData.xlsx');
+            }
+
+            function handleFileImport(event) {
+                if (!confirm('导入将覆盖当前画布上的所有内容，确定吗？')) {
+                    event.target.value = ''; // Reset file input
+                    return;
+                }
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                        
+                        // Clear current state
+                        nodes = [];
+                        connections = [];
+
+                        // --- Two-Pass Import Process ---
+                        // Pass 1: Create all nodes and map their user-defined ID to our internal ID.
+                        const userIdToInternalIdMap = new Map();
+                        jsonData.forEach((row, index) => {
+                            const internalId = Date.now() + index; // Unique internal ID
+                            const userId = row['节点ID (NodeID)'];
+                            if (!userId) {
+                                console.warn(`Skipping row ${index + 2} in Excel due to missing NodeID.`);
+                                return;
+                            }
+                            
+                            const newNode = {
+                                id: internalId,
+                                userId: userId,
+                                stageId: row['阶段ID (StageID)'],
+                                speaker: row['说话人 (Speaker)'],
+                                text: row['基础文本 (Text)'],
+                                optionA: row['选项A文本 (OptionA)'],
+                                optionB: row['选项B文本 (OptionB)'],
+                                // Auto-layout position
+                                x: (index % 5) * 300 + 50,
+                                y: Math.floor(index / 5) * 280 + 50,
+                            };
+                            nodes.push(newNode);
+                            userIdToInternalIdMap.set(userId, internalId);
+                        });
+
+                        // Pass 2: Create connections using the map.
+                        jsonData.forEach(row => {
+                            const sourceUserId = row['节点ID (NodeID)'];
+                            if (!sourceUserId) return;
+                            
+                            const sourceInternalId = userIdToInternalIdMap.get(sourceUserId);
+
+                            const targetA_UserId = row['选项A指向节点ID (TargetA)'];
+                            if (targetA_UserId && userIdToInternalIdMap.has(targetA_UserId)) {
+                                const targetInternalId = userIdToInternalIdMap.get(targetA_UserId);
+                                connections.push({ fromNode: sourceInternalId, fromOutlet: 'A', toNode: targetInternalId });
+                            }
+
+                            const targetB_UserId = row['选项B指向节点ID (TargetB)'];
+                            if (targetB_UserId && userIdToInternalIdMap.has(targetB_UserId)) {
+                                const targetInternalId = userIdToInternalIdMap.get(targetB_UserId);
+                                connections.push({ fromNode: sourceInternalId, fromOutlet: 'B', toNode: targetInternalId });
+                            }
+                        });
+
+                        render(); // Draw everything
+                    } catch (error) {
+                        alert('文件解析失败！请确保文件格式正确，或使用下载的模板。');
+                        console.error("Import error:", error);
+                    } finally {
+                        event.target.value = ''; // Reset for next import
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+
+            function downloadTemplate() {
+                const templateData = [
+                    {
+                        '阶段ID (StageID)': 'Chapter1',
+                        '节点ID (NodeID)': 'StartNode',
+                        '说话人 (Speaker)': '旁白',
+                        '基础文本 (Text)': '故事从这里开始。你面前有两条路，一条通往森林，一条通往城堡。',
+                        '选项A文本 (OptionA)': '走向森林',
+                        '选项A指向节点ID (TargetA)': 'ForestPath',
+                        '选项B文本 (OptionB)': '走向城堡',
+                        '选项B指向节点ID (TargetB)': 'CastlePath',
+                    },
+                    {
+                        '阶段ID (StageID)': 'Chapter1',
+                        '节点ID (NodeID)': 'ForestPath',
+                        '说话人 (Speaker)': '旁白',
+                        '基础文本 (Text)': '你走进了幽暗的森林，听到远处传来狼嚎。',
+                        '选项A文本 (OptionA)': '继续前进',
+                        '选项A指向节点ID (TargetA)': '',
+                        '选项B文本 (OptionB)': '返回起点',
+                        '选项B指向节点ID (TargetB)': 'StartNode',
+                    },
+                    {
+                        '阶段ID (StageID)': 'Chapter1',
+                        '节点ID (NodeID)': 'CastlePath',
+                        '说话人 (Speaker)': '守卫',
+                        '基础文本 (Text)': '“站住！城堡不对外人开放。”',
+                        '选项A文本 (OptionA)': '尝试说服',
+                        '选项A指向节点ID (TargetA)': '',
+                        '选项B文本 (OptionB)': '转身离开',
+                        '选项B指向节点ID (TargetB)': 'StartNode',
+                    }
+                ];
+                const worksheet = XLSX.utils.json_to_sheet(templateData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'StoryData');
+                XLSX.writeFile(workbook, 'StoryEditor_Template.xlsx');
+            }
+
+            // --- Event Listeners ---
+            canvas.addEventListener('dblclick', e => { if (e.target === canvas) createNode(e.clientX, e.clientY); });
+            canvas.addEventListener('mousedown', e => {
+                const target = e.target;
+                if (target.classList.contains('connector')) {
+                    const nodeId = parseInt(target.dataset.nodeId);
+                    if (target.classList.contains('outlet-a') || target.classList.contains('outlet-b')) {
+                        isConnecting = true;
+                        connectionSource = { nodeId, outlet: target.dataset.outlet };
+                        canvas.style.cursor = 'crosshair';
+                    }
+                } else if (target.closest('.node') && !target.closest('.node-btn')) {
+                    const nodeEl = target.closest('.node');
+                    activeNode = nodes.find(n => n.id === parseInt(nodeEl.id.replace('node-', '')));
+                    if (activeNode) {
+                        offsetX = e.clientX - activeNode.x;
+                        offsetY = e.clientY - activeNode.y;
+                        nodeEl.style.cursor = 'grabbing';
+                    }
+                }
+            });
+            document.addEventListener('mousemove', e => { if (activeNode) { activeNode.x = e.clientX - offsetX; activeNode.y = e.clientY - offsetY; render(); } });
+            document.addEventListener('mouseup', e => {
+                if (activeNode) { const nodeEl = document.getElementById(`node-${activeNode.id}`); if (nodeEl) nodeEl.style.cursor = 'grab'; activeNode = null; }
+                if (isConnecting) {
+                    const target = e.target;
+                    if (target.classList.contains('inlet')) {
+                        const toNodeId = parseInt(target.dataset.nodeId);
+                        if (connectionSource.nodeId !== toNodeId) {
+                            connections = connections.filter(c => !(c.fromNode === connectionSource.nodeId && c.fromOutlet === connectionSource.outlet));
+                            connections.push({ fromNode: connectionSource.nodeId, fromOutlet: connectionSource.outlet, toNode: toNodeId });
+                        }
+                    }
+                    isConnecting = false; connectionSource = { nodeId: null, outlet: null }; canvas.style.cursor = 'default'; render();
+                }
+            });
+            canvas.addEventListener('click', e => {
+                const target = e.target;
+                if (target.classList.contains('edit-btn')) { openEditModal(parseInt(target.dataset.id)); } 
+                else if (target.classList.contains('delete-btn')) { deleteNode(parseInt(target.dataset.id)); }
+            });
+            saveBtn.addEventListener('click', () => {
+                const nodeId = parseInt(document.getElementById('editing-node-id').value);
+                const node = nodes.find(n => n.id === nodeId);
+                if (node) {
+                    node.stageId = document.getElementById('node-stage-id-input').value;
+                    node.userId = document.getElementById('node-user-id-input').value;
+                    node.speaker = document.getElementById('node-speaker-input').value;
+                    node.text = document.getElementById('node-text-input').value;
+                    node.optionA = document.getElementById('node-option-a-input').value;
+                    node.optionB = document.getElementById('node-option-b-input').value;
+                    closeEditModal(); render();
+                }
+            });
+            modalOverlay.addEventListener('click', closeEditModal);
+            exportBtn.addEventListener('click', exportToExcel);
+            importBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileImport);
+            downloadTemplateBtn.addEventListener('click', downloadTemplate);
+            toggleInstructionsBtn.addEventListener('click', () => { instructionsPanel.classList.toggle('hidden'); });
+
+            // Initial Render
+            render();
+        });
+    </script>
+
+</body>
+</html>

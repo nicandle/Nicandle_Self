@@ -1,0 +1,7 @@
+# Detected third-party dependencies for the tools package
+# pandas requires engines for Excel formats:
+# - openpyxl for .xlsx
+# - xlrd for .xls
+pandas
+openpyxl
+xlrd
